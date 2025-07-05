@@ -30,6 +30,22 @@ extern Secp256K1 *secp;
 #include "xxhash/xxhash.h"
 
 #include <fstream>
+#if defined(_WIN64) && !defined(__CYGWIN__)
+#include "getopt.h"
+#include <windows.h>
+#include <malloc.h>
+#else
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/random.h>
+#include <sys/mman.h>
+#endif
+#ifdef __unix__
+#ifdef __CYGWIN__
+#else
+#include <linux/random.h>
+#endif
+#endif
 
 /* endomorphism precomputed point */
 Point Glambda;
@@ -135,24 +151,6 @@ static void glv_split(const Int &k, Int &k1, Int &k2) {
 #include "hash/ripemd160.h"
 #ifdef _OPENMP
 #include <omp.h>
-#endif
-
-#if defined(_WIN64) && !defined(__CYGWIN__)
-#include "getopt.h"
-#include <windows.h>
-#include <malloc.h>
-#else
-#include <unistd.h>
-#include <pthread.h>
-#include <sys/random.h>
-#include <sys/mman.h>
-#endif
-
-#ifdef __unix__
-#ifdef __CYGWIN__
-#else
-#include <linux/random.h>
-#endif
 #endif
 #ifndef _WIN64
 static inline void set_thread_affinity(int core) {
