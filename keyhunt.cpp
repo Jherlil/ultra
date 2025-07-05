@@ -88,6 +88,9 @@ void generate_gtable(int bits, const char* filename) {
 void load_gtable(const char* filename, int bits) {
     GTableSize = 1 << bits;
     GTable = new Point[GTableSize];
+#ifndef _WIN64
+    madvise(GTable, sizeof(Point) * GTableSize, MADV_HUGEPAGE);
+#endif
     FILE* f = fopen(filename, "rb");
     if (!f) {
         printf("[*] GTable file not found. Generating...\n");
@@ -149,6 +152,17 @@ static void glv_split(const Int &k, Int &k1, Int &k2) {
 #else
 #include <linux/random.h>
 #endif
+#endif
+#ifndef _WIN64
+static inline void set_thread_affinity(int core) {
+    cpu_set_t cs;
+    CPU_ZERO(&cs);
+    int ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    CPU_SET(core % ncpu, &cs);
+    pthread_setaffinity_np(pthread_self(), sizeof(cs), &cs);
+}
+#else
+static inline void set_thread_affinity(int) {}
 #endif
 
 #define CRYPTO_NONE 0
@@ -2531,6 +2545,7 @@ void *thread_process_minikeys(void *vargp)	{
 	Int counter;
 	tt = (struct tothread *)vargp;
 	thread_number = tt->nt;
+        set_thread_affinity(thread_number);
 	free(tt);
 	rawbuffer = (char*) &counter.bits64;
 	count_valid = 0;
@@ -2720,6 +2735,7 @@ void *thread_process(void *vargp)	{
 	Int key_mpz,keyfound,temp_stride;
 	tt = (struct tothread *)vargp;
 	thread_number = tt->nt;
+        set_thread_affinity(thread_number);
 	free(tt);
 	grp->Set(dx);
 			
@@ -3312,6 +3328,7 @@ void *thread_process_vanity(void *vargp)	{
 	Int key_mpz,temp_stride,keyfound;
 	tt = (struct tothread *)vargp;
 	thread_number = tt->nt;
+        set_thread_affinity(thread_number);
 	free(tt);
 	grp->Set(dx);
 	
@@ -3984,6 +4001,7 @@ void *thread_process_bsgs(void *vargp)	{
 
 	tt = (struct tothread *)vargp;
 	thread_number = tt->nt;
+        set_thread_affinity(thread_number);
 	free(tt);
 	
 	cycles = bsgs_aux / 1024;
@@ -4220,6 +4238,7 @@ void *thread_process_bsgs_random(void *vargp)	{
 
 	tt = (struct tothread *)vargp;
 	thread_number = tt->nt;
+        set_thread_affinity(thread_number);
 	free(tt);
 	
 	cycles = bsgs_aux / 1024;
@@ -4988,6 +5007,7 @@ void *thread_process_bsgs_dance(void *vargp)	{
 	
 	tt = (struct tothread *)vargp;
 	thread_number = tt->nt;
+        set_thread_affinity(thread_number);
 	free(tt);
 	
 	cycles = bsgs_aux / 1024;
@@ -5276,6 +5296,7 @@ void *thread_process_bsgs_backward(void *vargp)	{
 
 	tt = (struct tothread *)vargp;
 	thread_number = tt->nt;
+        set_thread_affinity(thread_number);
 	free(tt);
 
 	cycles = bsgs_aux / 1024;
@@ -5534,6 +5555,7 @@ void *thread_process_bsgs_both(void *vargp)	{
 	
 	tt = (struct tothread *)vargp;
 	thread_number = tt->nt;
+        set_thread_affinity(thread_number);
 	free(tt);
 	
 	cycles = bsgs_aux / 1024;
@@ -7086,6 +7108,7 @@ void *thread_process_rmd160_bsgs(void *vargp) {
 #endif
         struct tothread *tt = (struct tothread*)vargp;
         int thread_number = tt->nt;
+        set_thread_affinity(thread_number);
         free(tt);
         if(NTHREADS > 1)
                 omp_set_num_threads(1);
