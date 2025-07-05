@@ -7156,3 +7156,58 @@ void *thread_process_rmd160_bsgs(void *vargp) {
         ends[thread_number] = 1;
         return NULL;
 }
+
+// Sliding window scalar multiplication (w=6) using odd multiples
+static inline Point scalar_mul_win6(const Int& k) {
+    static thread_local Point table[31];
+    static thread_local bool init = false;
+    if(!init) {
+        Point twoG = secp->Double(secp->G);
+        table[0] = secp->G;
+        for(int i=1;i<31;i++) {
+            table[i] = secp->Add(table[i-1], twoG);
+        }
+        init = true;
+    }
+
+    // Compute width-w NAF representation
+    const int w = 6;
+    int pow2w = 1<<w;
+    std::vector<int> digits;
+    Int tmp((Int*)&k);
+    while(!tmp.IsZero()) {
+        if(tmp.IsEven()) {
+            digits.push_back(0);
+        } else {
+            int u = 0;
+            for(int j=0;j<w;j++) {
+                if(tmp.GetBit(j)) u |= 1<<j;
+            }
+            if(u & (1<<(w-1))) u -= pow2w;
+            if(u>0) tmp.Sub((uint64_t)u); else tmp.Add((uint64_t)(-u));
+            digits.push_back(u);
+        }
+        tmp.ShiftR(1);
+    }
+
+    Point R; R.Clear(); R.z.SetInt32(1);
+    for(int i=digits.size()-1;i>=0;i--) {
+        if(!R.isZero()) R = secp->Double(R);
+        int d = digits[i];
+        if(d!=0) {
+            Point P = table[(abs(d)-1)/2];
+            if(d<0) P.y.ModNeg();
+            if(R.isZero()) R.Set(&P.x,&P.y,&P.z); else R = secp->Add(R,P);
+        }
+    }
+    R.Reduce();
+    return R;
+}
+
+#ifdef __AVX2__
+static inline void scalar_mul_win6_8way(const Int* k8, Point* P8) {
+    for(int i=0;i<8;i++) {
+        P8[i] = scalar_mul_win6(k8[i]);
+    }
+}
+#endif

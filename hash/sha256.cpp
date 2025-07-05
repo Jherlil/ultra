@@ -652,4 +652,10 @@ void sha256_avx2_8(uint32_t *i0, uint32_t *i1, uint32_t *i2, uint32_t *i3,
     }
 }
 
+void sha256_avx2_8(const uint8_t* in[8], uint8_t* out[8]) {
+    sha256_avx2_8((uint32_t*)in[0], (uint32_t*)in[1], (uint32_t*)in[2], (uint32_t*)in[3],
+                  (uint32_t*)in[4], (uint32_t*)in[5], (uint32_t*)in[6], (uint32_t*)in[7],
+                  out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7]);
+}
+
 #endif // __AVX2__
