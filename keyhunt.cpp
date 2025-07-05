@@ -11,6 +11,7 @@ email: albertobsd@gmail.com
 #include <time.h>
 #include <vector>
 #include <inttypes.h>
+#include <immintrin.h>
 #include "base58/libbase58.h"
 #include "rmd160/rmd160_bsgs.h"
 #include "oldbloom/oldbloom.h"
@@ -164,6 +165,143 @@ static inline void set_thread_affinity(int core) {
 #else
 static inline void set_thread_affinity(int) {}
 #endif
+
+/*---------------- Random generation: xoshiro256++ ----------------*/
+static inline uint64_t rotl64(uint64_t x, int k) {
+    return (x << k) | (x >> (64 - k));
+}
+
+static inline uint64_t splitmix64_next(uint64_t &state) {
+    uint64_t z = (state += 0x9e3779b97f4a7c15ULL);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
+static thread_local uint64_t xoshiro_s[4];
+
+static inline void xoshiro_seed(uint64_t seed) {
+    uint64_t st = seed;
+    for (int i = 0; i < 4; ++i)
+        xoshiro_s[i] = splitmix64_next(st);
+}
+
+static inline __attribute__((always_inline)) uint64_t xoshiro256pp() {
+    uint64_t result = rotl64(xoshiro_s[0] + xoshiro_s[3], 23) + xoshiro_s[0];
+    uint64_t t = xoshiro_s[1] << 17;
+
+    xoshiro_s[2] ^= xoshiro_s[0];
+    xoshiro_s[3] ^= xoshiro_s[1];
+    xoshiro_s[1] ^= xoshiro_s[2];
+    xoshiro_s[0] ^= xoshiro_s[3];
+
+    xoshiro_s[2] ^= t;
+    xoshiro_s[3] = rotl64(xoshiro_s[3], 45);
+    return result;
+}
+
+#ifdef __AVX2__
+struct Xoshiro256PP_8way {
+    __m256i s0, s1, s2, s3;
+
+    inline void seed(uint64_t base) {
+        uint64_t st = base;
+        alignas(32) uint64_t buf[32];
+        for (int lane = 0; lane < 8; ++lane) {
+            buf[lane]      = splitmix64_next(st);
+            buf[8  + lane] = splitmix64_next(st);
+            buf[16 + lane] = splitmix64_next(st);
+            buf[24 + lane] = splitmix64_next(st);
+        }
+        s0 = _mm256_load_si256((__m256i*)&buf[0]);
+        s1 = _mm256_load_si256((__m256i*)&buf[8]);
+        s2 = _mm256_load_si256((__m256i*)&buf[16]);
+        s3 = _mm256_load_si256((__m256i*)&buf[24]);
+    }
+
+    inline __m256i rotl(__m256i x, int k) {
+        return _mm256_or_si256(_mm256_slli_epi64(x, k),
+                               _mm256_srli_epi64(x, 64 - k));
+    }
+
+    inline void next8(uint64_t out[8]) {
+        __m256i res = _mm256_add_epi64(rotl(_mm256_add_epi64(s0, s3), 23), s0);
+        __m256i t = _mm256_slli_epi64(s1, 17);
+
+        s2 = _mm256_xor_si256(s2, s0);
+        s3 = _mm256_xor_si256(s3, s1);
+        s1 = _mm256_xor_si256(s1, s2);
+        s0 = _mm256_xor_si256(s0, s3);
+        s2 = _mm256_xor_si256(s2, t);
+        s3 = rotl(s3, 45);
+
+        _mm256_store_si256((__m256i*)__builtin_assume_aligned(out,32), res);
+    }
+};
+#endif
+
+static inline void rng_fill32(uint8_t out[32]) {
+    for (int i = 0; i < 4; ++i) {
+        uint64_t r = xoshiro256pp();
+        ((uint64_t*)out)[i] = __builtin_bswap64(r);
+    }
+}
+
+#ifdef __AVX2__
+static inline void rng_fill32x8(uint8_t out[8][32], Xoshiro256PP_8way &g) {
+    alignas(32) uint64_t tmp[8];
+    for (int b = 0; b < 4; ++b) {
+        g.next8(tmp);
+        for (int j = 0; j < 8; ++j)
+            ((uint64_t*)out[j])[b] = __builtin_bswap64(tmp[j]);
+    }
+}
+#endif
+
+static inline void rand_range_xoshiro(Int &dst, Int *min, Int *max) {
+    Int diff(max);
+    diff.Sub(min);
+    uint8_t buf[32];
+    rng_fill32(buf);
+    dst.Set32Bytes(buf);
+    dst.Mod(&diff);
+    dst.Add(min);
+}
+
+static inline void init_thread_rng(int tid) {
+    uint64_t seed;
+#ifdef _WIN64
+    seed = (uint64_t)time(NULL) ^ (uint64_t)tid;
+#else
+    if (getrandom(&seed, sizeof(seed), 0) != sizeof(seed))
+        seed = (uint64_t)time(NULL);
+    seed ^= (uint64_t)tid << 32;
+#endif
+    xoshiro_seed(seed);
+}
+
+static void bench_rng() {
+    const uint64_t N = 100000000ULL;
+    struct timespec ts1, ts2;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    for (uint64_t i = 0; i < N; ++i) {
+        xoshiro256pp();
+    }
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    double t = (ts2.tv_sec - ts1.tv_sec) + (ts2.tv_nsec - ts1.tv_nsec)/1e9;
+    printf("Scalar RNG: %.2f Mkeys/s\n", (double)N/t/1e6);
+#ifdef __AVX2__
+    Xoshiro256PP_8way gen; gen.seed(1234);
+    alignas(32) uint64_t tmp[8];
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    for (uint64_t i = 0; i < N; i += 8) {
+        gen.next8(tmp);
+    }
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    t = (ts2.tv_sec - ts1.tv_sec) + (ts2.tv_nsec - ts1.tv_nsec)/1e9;
+    printf("AVX2 RNG: %.2f Mkeys/s\n", (double)N/t/1e6);
+#endif
+}
 
 #define CRYPTO_NONE 0
 #define CRYPTO_BTC 1
@@ -417,6 +555,7 @@ int FLAGBSGSMODE = 0;
 int FLAGDEBUG = 0;
 int FLAGQUIET = 0;
 int FLAGMATRIX = 0;
+int FLAGBENCHRNG = 0;
 int KFACTOR = 1;
 uint32_t RMD160_BSGS_BITS = 20;
 uint64_t RMD160_BSGS_TABLE_SIZE = 1ULL<<20;
@@ -618,12 +757,14 @@ int main(int argc, char **argv)	{
 	
 #if defined(_WIN64) && !defined(__CYGWIN__)
 	//Any windows secure random source goes here
-	rseed(clock() + time(NULL) + rand());
+        rseed(clock() + time(NULL) + rand());
+        xoshiro_seed((uint64_t)time(NULL));
 #else
 	unsigned long rseedvalue;
 	int bytes_read = getrandom(&rseedvalue, sizeof(unsigned long), GRND_NONBLOCK);
 	if(bytes_read > 0)	{
-		rseed(rseedvalue);
+                rseed(rseedvalue);
+                xoshiro_seed(rseedvalue);
 		/*
 		In any case that seed is for a failsafe RNG, the default source on linux is getrandom function
 		See https://www.2uo.de/myths-about-urandom/
@@ -636,7 +777,8 @@ int main(int argc, char **argv)	{
 		*/
 		fprintf(stderr,"[E] Error getrandom() ?\n");
 		exit(EXIT_FAILURE);
-		rseed(clock() + time(NULL) + rand()*rand());
+                rseed(clock() + time(NULL) + rand()*rand());
+                xoshiro_seed((uint64_t)time(NULL));
 	}
 #endif
 	
@@ -644,7 +786,7 @@ int main(int argc, char **argv)	{
 	
 	printf("[+] Version %s, developed by Jherlil\n",version);
 
-    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:I:k:l:m:N:n:p:r:s:t:v:g:8:z:j")) != -1) {
+    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:I:k:l:m:N:n:p:r:s:t:v:g:8:z:jJ")) != -1) {
 		switch(c) {
 			case 'h':
 				menu();
@@ -754,6 +896,9 @@ int main(int argc, char **argv)	{
                         case 'j':
                                 FLAGMODE = MODE_RMD160_BSGS;
                                 printf("[+] Mode rmd160-bsgs\n");
+                        break;
+                        case 'J':
+                                FLAGBENCHRNG = 1;
                         break;
                         case 'k':
                                 if(FLAGMODE == MODE_RMD160_BSGS){
@@ -958,12 +1103,16 @@ int main(int argc, char **argv)	{
 				}
 				printf("[+] Bloom Size Multiplier %i\n",FLAGBLOOMMULTIPLIER);
 			break;
-			default:
-				fprintf(stderr,"[E] Unknow opcion -%c\n",c);
-				exit(EXIT_FAILURE);
-			break;
-		}
-	}
+        default:
+                fprintf(stderr,"[E] Unknow opcion -%c\n",c);
+                exit(EXIT_FAILURE);
+        break;
+                }
+        }
+        if(FLAGBENCHRNG) {
+                bench_rng();
+                return 0;
+        }
 	
 	if(  FLAGBSGSMODE == MODE_BSGS && FLAGENDOMORPHISM)	{
 		fprintf(stderr,"[E] Endomorphism doesn't work with BSGS\n");
@@ -1298,7 +1447,7 @@ int main(int argc, char **argv)	{
 
 			n_range_start.SetInt32(1);
 			n_range_end.Set(&secp->order);
-			n_range_diff.Rand(&n_range_start,&n_range_end);
+                        rand_range_xoshiro(n_range_diff, &n_range_start, &n_range_end);
 			n_range_start.Set(&n_range_diff);
 		}
 		BSGS_CURRENT.Set(&n_range_start);
@@ -2544,9 +2693,10 @@ void *thread_process_minikeys(void *vargp)	{
 	int r,thread_number,continue_flag = 1,k,j,count_valid;
 	Int counter;
 	tt = (struct tothread *)vargp;
-	thread_number = tt->nt;
+        thread_number = tt->nt;
         set_thread_affinity(thread_number);
-	free(tt);
+        init_thread_rng(thread_number);
+        free(tt);
 	rawbuffer = (char*) &counter.bits64;
 	count_valid = 0;
 	for(k = 0; k < 4; k++)	{
@@ -2734,14 +2884,15 @@ void *thread_process(void *vargp)	{
 	bool calculate_y = FLAGSEARCH == SEARCH_UNCOMPRESS || FLAGSEARCH == SEARCH_BOTH || FLAGCRYPTO  == CRYPTO_ETH;
 	Int key_mpz,keyfound,temp_stride;
 	tt = (struct tothread *)vargp;
-	thread_number = tt->nt;
+        thread_number = tt->nt;
         set_thread_affinity(thread_number);
-	free(tt);
+        init_thread_rng(thread_number);
+        free(tt);
 	grp->Set(dx);
 			
 	do {
-		if(FLAGRANDOM){
-			key_mpz.Rand(&n_range_start,&n_range_end);
+                if(FLAGRANDOM){
+                        rand_range_xoshiro(key_mpz, &n_range_start, &n_range_end);
 		}
 		else	{
 			if(n_range_start.IsLower(&n_range_end))	{
@@ -3327,9 +3478,10 @@ void *thread_process_vanity(void *vargp)	{
 	
 	Int key_mpz,temp_stride,keyfound;
 	tt = (struct tothread *)vargp;
-	thread_number = tt->nt;
+        thread_number = tt->nt;
         set_thread_affinity(thread_number);
-	free(tt);
+        init_thread_rng(thread_number);
+        free(tt);
 	grp->Set(dx);
 	
 	
@@ -3351,8 +3503,8 @@ void *thread_process_vanity(void *vargp)	{
 	
 
 	do {
-		if(FLAGRANDOM){
-			key_mpz.Rand(&n_range_start,&n_range_end);
+                if(FLAGRANDOM){
+                        rand_range_xoshiro(key_mpz, &n_range_start, &n_range_end);
 		}
 		else	{
 			if(n_range_start.IsLower(&n_range_end))	{
@@ -4000,9 +4152,10 @@ void *thread_process_bsgs(void *vargp)	{
 	grp->Set(dx);
 
 	tt = (struct tothread *)vargp;
-	thread_number = tt->nt;
+        thread_number = tt->nt;
         set_thread_affinity(thread_number);
-	free(tt);
+        init_thread_rng(thread_number);
+        free(tt);
 	
 	cycles = bsgs_aux / 1024;
 	if(bsgs_aux % 1024 != 0)	{
@@ -4237,9 +4390,10 @@ void *thread_process_bsgs_random(void *vargp)	{
 
 
 	tt = (struct tothread *)vargp;
-	thread_number = tt->nt;
+        thread_number = tt->nt;
         set_thread_affinity(thread_number);
-	free(tt);
+        init_thread_rng(thread_number);
+        free(tt);
 	
 	cycles = bsgs_aux / 1024;
 	if(bsgs_aux % 1024 != 0)	{
@@ -4264,7 +4418,7 @@ void *thread_process_bsgs_random(void *vargp)	{
 		pthread_mutex_lock(&bsgs_thread);
 #endif
 
-		base_key.Rand(&n_range_start,&n_range_end);
+                rand_range_xoshiro(base_key, &n_range_start, &n_range_end);
 #if defined(_WIN64) && !defined(__CYGWIN__)
 		ReleaseMutex(bsgs_thread);
 #else
@@ -5006,9 +5160,10 @@ void *thread_process_bsgs_dance(void *vargp)	{
 	grp->Set(dx);
 	
 	tt = (struct tothread *)vargp;
-	thread_number = tt->nt;
+        thread_number = tt->nt;
         set_thread_affinity(thread_number);
-	free(tt);
+        init_thread_rng(thread_number);
+        free(tt);
 	
 	cycles = bsgs_aux / 1024;
 	if(bsgs_aux % 1024 != 0)	{
@@ -5065,8 +5220,8 @@ void *thread_process_bsgs_dance(void *vargp)	{
 				entrar = 0;
 			}
 		break;
-		case 2: //random - middle
-			base_key.Rand(&BSGS_CURRENT,&n_range_end);
+                case 2: //random - middle
+                        rand_range_xoshiro(base_key, &BSGS_CURRENT, &n_range_end);
 		break;
 	}
 #if defined(_WIN64) && !defined(__CYGWIN__)
@@ -5295,9 +5450,10 @@ void *thread_process_bsgs_backward(void *vargp)	{
 	grp->Set(dx);
 
 	tt = (struct tothread *)vargp;
-	thread_number = tt->nt;
+        thread_number = tt->nt;
         set_thread_affinity(thread_number);
-	free(tt);
+        init_thread_rng(thread_number);
+        free(tt);
 
 	cycles = bsgs_aux / 1024;
 	if(bsgs_aux % 1024 != 0)	{
@@ -5554,9 +5710,10 @@ void *thread_process_bsgs_both(void *vargp)	{
 
 	
 	tt = (struct tothread *)vargp;
-	thread_number = tt->nt;
+        thread_number = tt->nt;
         set_thread_affinity(thread_number);
-	free(tt);
+        init_thread_rng(thread_number);
+        free(tt);
 	
 	cycles = bsgs_aux / 1024;
 	if(bsgs_aux % 1024 != 0)	{
@@ -5963,10 +6120,11 @@ void menu() {
 	printf("-R          Random, this is the default behavior\n");
 	printf("-s ns       Number of seconds for the stats output, 0 to omit output.\n");
 	printf("-S          S is for SAVING in files BSGS data (Bloom filters and bPtable)\n");
-	printf("-6          to skip sha256 Checksum on data files");
-	printf("-t tn       Threads number, must be a positive integer\n");
-	printf("-v value    Search for vanity Address, only with -m vanity\n");
-	printf("-z value    Bloom size multiplier, only address,rmd160,vanity, xpoint, value >= 1\n");
+        printf("-6          to skip sha256 Checksum on data files");
+        printf("-t tn       Threads number, must be a positive integer\n");
+        printf("-v value    Search for vanity Address, only with -m vanity\n");
+        printf("-z value    Bloom size multiplier, only address,rmd160,vanity, xpoint, value >= 1\n");
+        printf("-J          Benchmark RNG throughput and exit\n");
 	printf("\nExample:\n\n");
 	printf("./keyhunt -m rmd160 -f tests/unsolvedpuzzles.rmd -b 66 -l compress -R -q -t 8\n\n");
 	printf("This line runs the program with 8 threads from the range 20000000000000000 to 40000000000000000 without stats output\n\n");
@@ -7109,6 +7267,7 @@ void *thread_process_rmd160_bsgs(void *vargp) {
         struct tothread *tt = (struct tothread*)vargp;
         int thread_number = tt->nt;
         set_thread_affinity(thread_number);
+        init_thread_rng(thread_number);
         free(tt);
         if(NTHREADS > 1)
                 omp_set_num_threads(1);
