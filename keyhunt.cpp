@@ -7477,7 +7477,7 @@ void *thread_process_rmd160_bsgs(void *vargp) {
         free(tt);
         if(NTHREADS > 1)
                 omp_set_num_threads(1);
-        Int key, inc, tmp, thread_start, thread_end;
+        Int key, inc, thread_start, thread_end;
 
         compute_thread_range(n_range_start, n_range_end, thread_number,
                             NTHREADS, thread_start, thread_end);
@@ -7489,10 +7489,8 @@ void *thread_process_rmd160_bsgs(void *vargp) {
                 free(s); free(e);
         }
 
-        /* Setup the increment between blocks */
+        /* Each thread walks its assigned chunk sequentially */
         inc.SetInt64(RMD160_BSGS_TABLE_SIZE);
-        tmp.SetInt32(NTHREADS);
-        inc.Mult(&tmp);
 
         key.Set(&thread_start);
 #if defined(_WIN64) && !defined(__CYGWIN__)
