@@ -1177,6 +1177,7 @@ int main(int argc, char **argv)	{
 				}
                                 omp_set_num_threads(NTHREADS);
 				printf((NTHREADS > 1) ? "[+] Threads : %u\n": "[+] Thread : %u\n",NTHREADS);
+                                break;
                         case 'x':
                                 FLAG_COORDINATOR = 1;
                                 coordinator_port = optarg;
