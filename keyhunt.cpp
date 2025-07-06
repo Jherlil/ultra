@@ -29,6 +29,15 @@ extern Secp256K1 *secp;
 #include "hash/sha256.h"
 #include "xxhash/xxhash.h"
 
+#ifndef BATCH
+#define BATCH 1
+#endif
+
+static inline Point scalar_mul_win6(const Int& k);
+#ifdef __AVX2__
+static inline void scalar_mul_win6_8way(const Int* k8, Point* P8);
+#endif
+
 #include <fstream>
 #if defined(_WIN64) && !defined(__CYGWIN__)
 #include "getopt.h"
@@ -143,10 +152,67 @@ Point ComputePublicKey_GTable(const Int& priv) {
     return result;
 }
 
+static inline Point ComputePublicKey_Win6(const Int& priv) {
+    return scalar_mul_win6(priv);
+}
+
+#ifdef __AVX2__
+static inline void ComputePublicKey_Win6_8way(const Int* k8, Point* P8) {
+    scalar_mul_win6_8way(k8, P8);
+}
+#endif
+
+static inline void mul_shift_256_256_384(Int &r, const Int &a, const Int &b) {
+    uint64_t l[8] = {0};
+    for(int i=0;i<4;i++) {
+        unsigned __int128 carry = 0;
+        for(int j=0;j<4;j++) {
+            unsigned __int128 t = (unsigned __int128)a.bits64[i] * b.bits64[j];
+            t += l[i+j] + carry;
+            l[i+j] = (uint64_t)t;
+            carry = t >> 64;
+        }
+        l[i+4] += (uint64_t)carry;
+        for(int k=i+4; carry>>64; k++) {
+            unsigned __int128 t = (unsigned __int128)l[k] + (carry>>64);
+            l[k] = (uint64_t)t;
+            carry = t >> 64;
+        }
+    }
+    r.SetInt32(0);
+    r.bits64[0] = l[6];
+    r.bits64[1] = l[7];
+    r.bits64[2] = r.bits64[3] = r.bits64[4] = 0;
+    if((l[5] >> 63) & 1)
+        r.AddOne();
+}
+
 static void glv_split(const Int &k, Int &k1, Int &k2) {
-    /* Simple placeholder split: no real reduction */
+    static Int minus_b1, minus_b2, g1, g2, lam;
+    static bool init = false;
+    if(!init) {
+        minus_b1.SetBase16("E4437ED6010E88286F547FA90ABFE4C3");
+        minus_b2.SetBase16("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE8A280AC50774346DD765CDA83DB1562C");
+        g1.SetBase16("3086D221A7D46BCDE86C90E49284EB153DAA8A1471E8CA7FE893209A45DBB031");
+        g2.SetBase16("E4437ED6010E88286F547FA90ABFE4C4221208AC9DF506C61571B4AE8AC47F71");
+        lam.SetBase16("5363AD4CC05C30E0A5261C028812645A122E22EA20816678DF02967C1B23BD72");
+        init = true;
+    }
+
+    Int c1, c2;
+    mul_shift_256_256_384(c1, k, g1);
+    mul_shift_256_256_384(c2, k, g2);
+    c1.ModMulK1order(&minus_b1);
+    c2.ModMulK1order(&minus_b2);
+    Int r2; r2.ModAddK1order(&c1,&c2);
+    k2.Set(&r2);
+
+    Int tmp(r2);
+    tmp.ModMulK1order(&lam);
     k1.Set((Int*)&k);
-    k2.SetInt32(0);
+    k1.Sub(&tmp);
+    if(k1.IsNegative())
+        k1.Add(&secp->order);
 }
 #include "hash/ripemd160.h"
 #ifdef _OPENMP
@@ -557,6 +623,8 @@ int FLAGBENCHRNG = 0;
 int KFACTOR = 1;
 uint32_t RMD160_BSGS_BITS = 20;
 uint64_t RMD160_BSGS_TABLE_SIZE = 1ULL<<20;
+static uint32_t opt_k_value = 0;
+static int opt_k_set = 0;
 int MAXLENGTHADDRESS = -1;
 int NTHREADS = 1;
 
@@ -898,21 +966,10 @@ int main(int argc, char **argv)	{
                         case 'J':
                                 FLAGBENCHRNG = 1;
                         break;
-                        case 'k': {
-                                uint32_t val = strtoul(optarg, NULL, 10);
-                                if (FLAGMODE == MODE_RMD160_BSGS) {
-                                        if(val > 63) {
-                                                fprintf(stderr, "[W] value too big for -k, capped to 63\n");
-                                                val = 63;
-                                        }
-                                        RMD160_BSGS_BITS = val;
-                                        RMD160_BSGS_TABLE_SIZE = 1ULL << RMD160_BSGS_BITS;
-                                        printf("[+] Table size 2^%u entries\n", RMD160_BSGS_BITS);
-                                } else {
-                                        KFACTOR = val <= 0 ? 1 : (int)val;
-                                        printf("[+] K factor %i\n", KFACTOR);
-                                }
-                        } break;
+                        case 'k':
+                                opt_k_value = strtoul(optarg, NULL, 10);
+                                opt_k_set = 1;
+                        break;
 
 			case 'l':
 				switch(indexOf(optarg,publicsearch,3)) {
@@ -1105,6 +1162,23 @@ int main(int argc, char **argv)	{
         break;
                 }
         }
+
+        if(opt_k_set){
+                if(FLAGMODE == MODE_RMD160_BSGS){
+                        uint32_t val = opt_k_value;
+                        if(val > 63){
+                                fprintf(stderr,"[W] value too big for -k, capped to 63\n");
+                                val = 63;
+                        }
+                        RMD160_BSGS_BITS = val;
+                        RMD160_BSGS_TABLE_SIZE = 1ULL << RMD160_BSGS_BITS;
+                        printf("[+] Table size 2^%u entries\n", RMD160_BSGS_BITS);
+                }else{
+                        KFACTOR = opt_k_value <= 0 ? 1 : (int)opt_k_value;
+                        printf("[+] K factor %i\n", KFACTOR);
+                }
+        }
+
         if(FLAGBENCHRNG) {
                 bench_rng();
                 return 0;
@@ -7064,7 +7138,18 @@ void generate_block(Int *start,uint64_t count,struct rmd160_entry *table){
         }else if(UseGTable){
                 pub = ComputePublicKey_GTable(key);
         }else{
-                pub = secp->ComputePublicKey(&key);
+#if defined(__AVX2__) && BATCH==8
+                Int keys8[8];
+                for(int j=0;j<8;j++){
+                        keys8[j].Set(&key);
+                        keys8[j].Add((uint64_t)j);
+                }
+                Point P8[8];
+                scalar_mul_win6_8way(keys8,P8);
+                pub = P8[0];
+#else
+                pub = scalar_mul_win6(key);
+#endif
         }
 
         uint64_t i = 0;
