@@ -19,7 +19,8 @@ OBJS = \
     util.o \
     secp256k1/Int.o secp256k1/Point.o secp256k1/SECP256K1.o \
     secp256k1/IntMod.o secp256k1/Random.o secp256k1/IntGroup.o \
-    hash/ripemd160.o hash/sha256.o hash/ripemd160_sse.o hash/sha256_sse.o
+    hash/ripemd160.o hash/sha256.o hash/ripemd160_sse.o hash/sha256_sse.o \
+    distributed.o
 
 all: keyhunt
 
