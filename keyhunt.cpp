@@ -850,8 +850,9 @@ Int lambda,lambda2,beta,beta2;
 Secp256K1 *secp;
 
 
-int gtable_bits = -1; // -1 disabled, otherwise table bits (20 + gtable_bits up to 60)
+int gtable_bits = -1; // -1 disabled, otherwise table bits (1-80)
 char gtable_filename[64] = {0};
+int gtable_option_set = 0;
 int main(int argc, char **argv)	{
 	char buffer[2048];
 	char rawvalue[32];
@@ -1233,8 +1234,7 @@ int main(int argc, char **argv)	{
                                         exit(1);
                                 }
                                 sprintf(gtable_filename, "gtable_%d.bin", gtable_bits);
-                                load_gtable(gtable_filename, gtable_bits);
-                                UseGTable = 1;
+                                gtable_option_set = 1;
                         break;
 			case 'z':
 				FLAGBLOOMMULTIPLIER= strtol(optarg,NULL,10);
@@ -1318,6 +1318,14 @@ int main(int argc, char **argv)	{
 		stride.Set(&ONE);
 	}
 	init_generator();
+        if(gtable_option_set){
+                if(FLAGMODE == MODE_RMD160_BSGS){
+                        load_gtable(gtable_filename, gtable_bits);
+                        UseGTable = 1;
+                }else{
+                fprintf(stderr,"[W] Option -g ignored; GTable only available in rmd160-bsgs mode\n");
+                }
+        }
 	if(FLAGMODE == MODE_BSGS )	{
 		printf("[+] Mode BSGS %s\n",bsgs_modes[FLAGBSGSMODE]);
 	}
@@ -6307,7 +6315,7 @@ void menu() {
         printf("-I stride   Stride for xpoint, rmd160 and address, this option don't work with bsgs\n");
         printf("-k value    Use this only with bsgs mode, k value is factor for M, more speed but more RAM use wisely\n");
         printf("-j          Enable rmd160-bsgs mode (use -k N for table size)\n");
-        printf("-g bits     Load or build a GTable with <bits> powers of two for faster rmd160-bsgs (1-80)\n");
+        printf("-g bits     Load or build a GTable (rmd160-bsgs only) with <bits> powers of two (1-80)\n");
         printf("-l look     What type of address/hash160 are you looking for <compress, uncompress, both> Only for rmd160 and address\n");
 	printf("-m mode     mode of search for cryptos. (bsgs, xpoint, rmd160, address, vanity) default: address\n");
 	printf("-M          Matrix screen, feel like a h4x0r, but performance will dropped\n");
@@ -7265,7 +7273,7 @@ void generate_block(Int *start,uint64_t count,struct rmd160_entry *table){
                 Point p1 = secp->ScalarMultiplication(secp->G,&k1);
                 Point p2 = secp->ScalarMultiplication(Glambda,&k2);
                 pub = secp->AddDirect(p1,p2);
-        }else if(UseGTable){
+        }else if(UseGTable && FLAGMODE == MODE_RMD160_BSGS){
                 pub = ComputePublicKey_GTable(key);
         }else{
 #if defined(__AVX2__) && BATCH==8
