@@ -21,5 +21,8 @@
 double rnd();
 unsigned long rndl();
 void rseed(unsigned long seed);
+#ifdef __AVX2__
+struct xoshiro256pp8;
+#endif
 
 #endif
