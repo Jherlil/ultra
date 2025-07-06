@@ -1216,8 +1216,8 @@ int main(int argc, char **argv)	{
 			break;
                         case 'g':
                                 gtable_bits = atoi(optarg);
-                                if (gtable_bits <= 0 || gtable_bits > 256) {
-                                        printf("[-] Invalid GTable bits (range 1-256 allowed)\n");
+                                if (gtable_bits <= 0 || gtable_bits > 80) {
+                                        printf("[-] Invalid GTable bits (range 1-80 allowed)\n");
                                         exit(1);
                                 }
                                 sprintf(gtable_filename, "gtable_%d.bin", gtable_bits);
@@ -6295,7 +6295,7 @@ void menu() {
         printf("-I stride   Stride for xpoint, rmd160 and address, this option don't work with bsgs\n");
         printf("-k value    Use this only with bsgs mode, k value is factor for M, more speed but more RAM use wisely\n");
         printf("-j          Enable rmd160-bsgs mode (use -k N for table size)\n");
-        printf("-g bits     Load or build a GTable with <bits> powers of two for faster rmd160-bsgs\n");
+        printf("-g bits     Load or build a GTable with <bits> powers of two for faster rmd160-bsgs (1-80)\n");
         printf("-l look     What type of address/hash160 are you looking for <compress, uncompress, both> Only for rmd160 and address\n");
 	printf("-m mode     mode of search for cryptos. (bsgs, xpoint, rmd160, address, vanity) default: address\n");
 	printf("-M          Matrix screen, feel like a h4x0r, but performance will dropped\n");
