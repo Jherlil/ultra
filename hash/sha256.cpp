@@ -551,6 +551,8 @@ static inline __m256i _shr256(__m256i x, int n) {
 #define sigma0(x) (_mm256_xor_si256(_mm256_xor_si256(_ror256((x), 7), _ror256((x), 18)), _shr256((x), 3)))
 #define sigma1(x) (_mm256_xor_si256(_mm256_xor_si256(_ror256((x), 17), _ror256((x), 19)), _shr256((x), 10)))
 
+#undef Ch
+#undef Maj
 #define Ch(x,y,z)  _mm256_xor_si256(_mm256_and_si256(x, y), _mm256_andnot_si256(x, z))
 #define Maj(x,y,z) _mm256_or_si256(_mm256_and_si256(x, y), _mm256_and_si256(z, _mm256_or_si256(x, y)))
 
