@@ -60,9 +60,11 @@ static inline void scalar_mul_win6_8way(const Int* k8, Point* P8);
 /* endomorphism precomputed point */
 Point Glambda;
 
+#define USE_GTABLE 0
+#define WINDOW_SIZE 6
+
 Point* GTable = nullptr;
 int GTableSize = 0;
-int UseGTable = 0;
 
 static void free_gtable() {
     if (GTable) {
@@ -93,6 +95,7 @@ static Point DecompressPoint(const uint8_t buf[33]) {
     return P;
 }
 
+#if USE_GTABLE
 void generate_gtable(int bits, const char* filename) {
     printf("[+] Generating GTable with %d powers of two...\n", bits);
     FILE* f = fopen(filename, "wb");
@@ -139,7 +142,6 @@ void load_gtable(const char* filename, int bits) {
     }
     fclose(f);
     printf("[+] GTable loaded (%d entries)\n", GTableSize);
-    UseGTable = 1;
 }
 
 Point ComputePublicKey_GTable(const Int& priv) {
@@ -156,6 +158,7 @@ Point ComputePublicKey_GTable(const Int& priv) {
     }
     return result;
 }
+#endif
 
 static inline Point ComputePublicKey_Win6(const Int& priv) {
     return scalar_mul_win6(priv);
@@ -850,9 +853,6 @@ Int lambda,lambda2,beta,beta2;
 Secp256K1 *secp;
 
 
-int gtable_bits = -1; // -1 disabled, otherwise table bits (1-80)
-char gtable_filename[64] = {0};
-int gtable_option_set = 0;
 int main(int argc, char **argv)	{
 	char buffer[2048];
 	char rawvalue[32];
@@ -932,7 +932,7 @@ int main(int argc, char **argv)	{
 	
 	printf("[+] Version %s, developed by Jherlil\n",version);
 
-    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:I:k:l:m:N:n:p:r:s:t:v:g:8:z:jJx:y:")) != -1) {
+    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:I:k:l:m:N:n:p:r:s:t:v:8:z:jJx:y:")) != -1) {
 		switch(c) {
 			case 'h':
 				menu();
@@ -1227,15 +1227,6 @@ int main(int argc, char **argv)	{
 					exit(EXIT_FAILURE);
 				}
 			break;
-                        case 'g':
-                                gtable_bits = atoi(optarg);
-                                if (gtable_bits <= 0 || gtable_bits > 80) {
-                                        printf("[-] Invalid GTable bits (range 1-80 allowed)\n");
-                                        exit(1);
-                                }
-                                sprintf(gtable_filename, "gtable_%d.bin", gtable_bits);
-                                gtable_option_set = 1;
-                        break;
 			case 'z':
 				FLAGBLOOMMULTIPLIER= strtol(optarg,NULL,10);
 				if(FLAGBLOOMMULTIPLIER <= 0)	{
@@ -1317,15 +1308,7 @@ int main(int argc, char **argv)	{
 		FLAGSTRIDE = 1;
 		stride.Set(&ONE);
 	}
-	init_generator();
-        if(gtable_option_set){
-                if(FLAGMODE == MODE_RMD160_BSGS){
-                        load_gtable(gtable_filename, gtable_bits);
-                        UseGTable = 1;
-                }else{
-                fprintf(stderr,"[W] Option -g ignored; GTable only available in rmd160-bsgs mode\n");
-                }
-        }
+        init_generator();
 	if(FLAGMODE == MODE_BSGS )	{
 		printf("[+] Mode BSGS %s\n",bsgs_modes[FLAGBSGSMODE]);
 	}
@@ -6315,7 +6298,6 @@ void menu() {
         printf("-I stride   Stride for xpoint, rmd160 and address, this option don't work with bsgs\n");
         printf("-k value    Use this only with bsgs mode, k value is factor for M, more speed but more RAM use wisely\n");
         printf("-j          Enable rmd160-bsgs mode (use -k N for table size)\n");
-        printf("-g bits     Load or build a GTable (rmd160-bsgs only) with <bits> powers of two (1-80)\n");
         printf("-l look     What type of address/hash160 are you looking for <compress, uncompress, both> Only for rmd160 and address\n");
 	printf("-m mode     mode of search for cryptos. (bsgs, xpoint, rmd160, address, vanity) default: address\n");
 	printf("-M          Matrix screen, feel like a h4x0r, but performance will dropped\n");
@@ -7273,8 +7255,6 @@ void generate_block(Int *start,uint64_t count,struct rmd160_entry *table){
                 Point p1 = secp->ScalarMultiplication(secp->G,&k1);
                 Point p2 = secp->ScalarMultiplication(Glambda,&k2);
                 pub = secp->AddDirect(p1,p2);
-        }else if(UseGTable && FLAGMODE == MODE_RMD160_BSGS){
-                pub = ComputePublicKey_GTable(key);
         }else{
 #if defined(__AVX2__) && BATCH==8
                 Int keys8[8];
@@ -7537,21 +7517,30 @@ void *thread_process_rmd160_bsgs(void *vargp) {
         return NULL;
 }
 
+struct PrecomputedG {
+    Point win[1 << (WINDOW_SIZE-1)];
+    bool init = false;
+};
+
+static inline PrecomputedG &get_precompG() {
+    static thread_local PrecomputedG tbl;
+    if(!tbl.init) {
+        Point twoG = secp->Double(secp->G);
+        tbl.win[0] = secp->G;
+        for(int i=1;i<(1<<(WINDOW_SIZE-1));i++) {
+            tbl.win[i] = secp->Add(tbl.win[i-1], twoG);
+        }
+        tbl.init = true;
+    }
+    return tbl;
+}
+
 // Sliding window scalar multiplication (w=6) using odd multiples
 static inline Point scalar_mul_win6(const Int& k) {
-    static thread_local Point table[31];
-    static thread_local bool init = false;
-    if(!init) {
-        Point twoG = secp->Double(secp->G);
-        table[0] = secp->G;
-        for(int i=1;i<31;i++) {
-            table[i] = secp->Add(table[i-1], twoG);
-        }
-        init = true;
-    }
+    PrecomputedG &tbl = get_precompG();
 
     // Compute width-w NAF representation
-    const int w = 6;
+    const int w = WINDOW_SIZE;
     int pow2w = 1<<w;
     std::vector<int> digits;
     Int tmp((Int*)&k);
@@ -7575,7 +7564,7 @@ static inline Point scalar_mul_win6(const Int& k) {
         if(!R.isZero()) R = secp->Double(R);
         int d = digits[i];
         if(d!=0) {
-            Point P = table[(abs(d)-1)/2];
+            Point P = tbl.win[(abs(d)-1)/2];
             if(d<0) P.y.ModNeg();
             if(R.isZero()) R.Set(&P.x,&P.y,&P.z); else R = secp->Add(R,P);
         }
