@@ -19,6 +19,7 @@ email: albertobsd@gmail.com
 #include "sha3/sha3.h"
 #include "util.h"
 #include "distributed.h"
+#include "skiprange.h"
 
 #include "secp256k1/SECP256k1.h"
 #include "secp256k1/Point.h"
@@ -736,6 +737,7 @@ char *range_start;
 char *range_end;
 char *str_stride;
 Int stride;
+const char *skipfile = NULL;
 
 uint64_t BSGS_XVALUE_RAM = 6;
 uint64_t BSGS_BUFFERXPOINTLENGTH = 32;
@@ -932,7 +934,7 @@ int main(int argc, char **argv)	{
 	
 	printf("[+] Version %s, developed by Jherlil\n",version);
 
-    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:I:k:l:m:N:n:p:r:s:t:v:8:z:jJx:y:")) != -1) {
+    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:g:I:k:l:m:N:n:p:r:s:t:v:8:z:jJx:y:")) != -1) {
 		switch(c) {
 			case 'h':
 				menu();
@@ -1031,10 +1033,13 @@ int main(int argc, char **argv)	{
                                 beta2.SetBase16("851695d49a83f8ef919bb86153cbcb16630fb68aed0a766a3ec693d68e6afa40");
                                 Glambda = secp->ScalarMultiplication(secp->G, &lambda);
                         break;
-			case 'f':
-				FLAGFILE = 1;
-				fileName = optarg;
-			break;
+                        case 'f':
+                                FLAGFILE = 1;
+                                fileName = optarg;
+                        break;
+                        case 'g':
+                                skipfile = optarg;
+                        break;
                         case 'I':
                                 FLAGSTRIDE = 1;
                                 str_stride = optarg;
@@ -1283,6 +1288,13 @@ int main(int argc, char **argv)	{
                         range_end   = we;
                         FLAGRANGE = 1;
                 }
+        }
+
+        if(skipfile){
+                if(load_skip_ranges(skipfile))
+                        printf("[+] Loaded skip ranges from %s\n", skipfile);
+                else
+                        fprintf(stderr, "[W] Could not open skip file %s\n", skipfile);
         }
 	
 	if(  FLAGBSGSMODE == MODE_BSGS && FLAGENDOMORPHISM)	{
@@ -6295,6 +6307,7 @@ void menu() {
 	printf("-8 alpha    Set the bas58 alphabet for minikeys\n");
         printf("-e          Enable endomorphism search (Only for address, rmd160 and vanity)\n");
         printf("-f file     Specify file name with addresses or xpoints or uncompressed public keys\n");
+        printf("-g file     Load file with ranges to skip (start end per line)\n");
         printf("-I stride   Stride for xpoint, rmd160 and address, this option don't work with bsgs\n");
         printf("-k value    Use this only with bsgs mode, k value is factor for M, more speed but more RAM use wisely\n");
         printf("-j          Enable rmd160-bsgs mode (use -k N for table size)\n");
@@ -7501,6 +7514,12 @@ void *thread_process_rmd160_bsgs(void *vargp) {
         mlock(table, sizeof(struct rmd160_entry)*RMD160_BSGS_TABLE_SIZE);
 #endif
         while(key.IsLowerOrEqual(&thread_end)){
+                const SkipRange *sr = skip_current_range(key);
+                if(sr){
+                        key.Set((Int*)&sr->end);
+                        key.AddOne();
+                        continue;
+                }
                 generate_block(&key,RMD160_BSGS_TABLE_SIZE,table);
                 compare_block(table,RMD160_BSGS_TABLE_SIZE);
                 key.Add(&inc);
