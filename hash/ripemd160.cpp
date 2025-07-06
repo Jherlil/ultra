@@ -334,4 +334,10 @@ void ripemd160_avx2_8(uint8_t *i0, uint8_t *i1, uint8_t *i2, uint8_t *i3,
   ripemd160sse_32(i0, i1, i2, i3, d0, d1, d2, d3);
   ripemd160sse_32(i4, i5, i6, i7, d4, d5, d6, d7);
 }
+
+void ripemd160_avx2_8(const uint8_t* in[8], uint8_t* out[8]) {
+  ripemd160_avx2_8((uint8_t*)in[0], (uint8_t*)in[1], (uint8_t*)in[2], (uint8_t*)in[3],
+                   (uint8_t*)in[4], (uint8_t*)in[5], (uint8_t*)in[6], (uint8_t*)in[7],
+                   out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7]);
+}
 #endif
