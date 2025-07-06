@@ -42,6 +42,9 @@ typedef struct { struct sha3 C512; } SHA3_512_CTX;
 typedef struct { struct sha3 C128; } SHAKE128_CTX;
 typedef struct { struct sha3 C256; } SHAKE256_CTX;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define	SHA3_224_DIGEST_LENGTH	28
 #define	SHA3_256_DIGEST_LENGTH	32
 #define	SHA3_384_DIGEST_LENGTH	48
@@ -85,4 +88,7 @@ void	KECCAK_512_Final(uint8_t[SHA3_512_DIGEST_LENGTH], SHA3_512_CTX *);
 
 int	SHA3_Selftest(void);
 
+#ifdef __cplusplus
+}
+#endif
 #endif	/* SHA3_H */
