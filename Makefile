@@ -2,10 +2,12 @@ CXX ?= g++
 CC  ?= gcc
 
 CXXFLAGS += -std=c++11 -O3 -march=native -mavx2 -maes -msha -mpclmul \
-            -funroll-loops -fomit-frame-pointer -flto -pipe -fopenmp
+            -funroll-loops -fomit-frame-pointer -pipe -fopenmp \
+            -fcf-protection=none
 CFLAGS   += -O3 -march=native -mavx2 -maes -msha -mpclmul  \
-            -funroll-loops -fomit-frame-pointer -flto -pipe -fopenmp
-LDFLAGS  += -flto -lm -lpthread
+            -funroll-loops -fomit-frame-pointer -pipe -fopenmp \
+            -fcf-protection=none
+LDFLAGS  += -lm -lpthread
 
 OBJS = \
     oldbloom/bloom.o \
