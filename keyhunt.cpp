@@ -427,6 +427,13 @@ static void compute_thread_range(const Int &start, const Int &end, int tid, int 
         out_end.AddOne();
     out_end.Add(&out_start);
     out_end.SubOne();
+
+    if(out_start.IsGreater((Int*)&end)) {
+        out_end.Set((Int*)&start);
+        out_end.SubOne();
+    } else if(out_end.IsGreater((Int*)&end)) {
+        out_end.Set((Int*)&end);
+    }
 }
 
 #define CRYPTO_NONE 0
@@ -470,9 +477,9 @@ struct rmd160_entry {
         uint8_t priv[32];
 };
 struct tothread {
-	int nt;     //Number thread
-	char *rs;   //range start
-	char *rpt;  //rng per thread
+        int nt;     //Number thread
+        Int start;
+        Int end;
 };
 
 struct bPload	{
