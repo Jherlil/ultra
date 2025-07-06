@@ -129,7 +129,12 @@ void load_gtable(const char* filename, int bits) {
     }
     uint8_t buffer[33];
     for (int i = 0; i < GTableSize; ++i) {
-        fread(buffer, 1, 33, f);
+        size_t n = fread(buffer, 1, 33, f);
+        if (n != 33) {
+            fprintf(stderr, "[E] Unexpected EOF while reading GTable\n");
+            fclose(f);
+            exit(EXIT_FAILURE);
+        }
         GTable[i] = DecompressPoint(buffer);
     }
     fclose(f);
