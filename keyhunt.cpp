@@ -29,6 +29,15 @@ extern Secp256K1 *secp;
 #include "hash/sha256.h"
 #include "xxhash/xxhash.h"
 
+#ifndef BATCH
+#define BATCH 1
+#endif
+
+static inline Point scalar_mul_win6(const Int& k);
+#ifdef __AVX2__
+static inline void scalar_mul_win6_8way(const Int* k8, Point* P8);
+#endif
+
 #include <fstream>
 #if defined(_WIN64) && !defined(__CYGWIN__)
 #include "getopt.h"
@@ -142,6 +151,16 @@ Point ComputePublicKey_GTable(const Int& priv) {
     }
     return result;
 }
+
+static inline Point ComputePublicKey_Win6(const Int& priv) {
+    return scalar_mul_win6(priv);
+}
+
+#ifdef __AVX2__
+static inline void ComputePublicKey_Win6_8way(const Int* k8, Point* P8) {
+    scalar_mul_win6_8way(k8, P8);
+}
+#endif
 
 static void glv_split(const Int &k, Int &k1, Int &k2) {
     /* Simple placeholder split: no real reduction */
@@ -7064,7 +7083,11 @@ void generate_block(Int *start,uint64_t count,struct rmd160_entry *table){
         }else if(UseGTable){
                 pub = ComputePublicKey_GTable(key);
         }else{
-                pub = secp->ComputePublicKey(&key);
+#if defined(__AVX2__) && BATCH==8
+                pub = scalar_mul_win6(key);
+#else
+                pub = scalar_mul_win6(key);
+#endif
         }
 
         uint64_t i = 0;
