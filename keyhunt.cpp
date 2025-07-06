@@ -7476,6 +7476,13 @@ void *thread_process_rmd160_bsgs(void *vargp) {
         compute_thread_range(n_range_start, n_range_end, thread_number,
                             NTHREADS, thread_start, thread_end);
 
+        if(!FLAGQUIET){
+                char *s = thread_start.GetBase16();
+                char *e = thread_end.GetBase16();
+                printf("[+] Thread %d range 0x%s - 0x%s\n", thread_number, s, e);
+                free(s); free(e);
+        }
+
         /* Setup the increment between blocks */
         inc.SetInt64(RMD160_BSGS_TABLE_SIZE);
         tmp.SetInt32(NTHREADS);
