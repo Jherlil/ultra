@@ -1,145 +1,80 @@
-/*
- * This file is part of the BSGS distribution (https://github.com/JeanLucPons/BSGS).
- * Copyright (c) 2020 Jean Luc PONS.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, version 3.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
-*/
-
-
 #include "Random.h"
-
-#if defined(_WIN64) && !defined(__CYGWIN__)
-#else
 #include <sys/random.h>
+#ifdef __AVX2__
+#include <immintrin.h>
 #endif
+#include <stdint.h>
+#include <time.h>
 
-#ifdef __unix__
-#ifdef __CYGWIN__
-#else
-#include <linux/random.h>
-#endif
-#endif
-
-#define  RK_STATE_LEN 624
-
-/* State of the RNG */
-typedef struct rk_state_
-{
-  unsigned long key[RK_STATE_LEN];
-  int pos;
-} rk_state;
-
-rk_state localState;
-
-/* Maximum generated random value */
-#define RK_MAX 0xFFFFFFFFUL
-
-void rk_seed(unsigned long seed, rk_state *state)
-{
-  int pos;
-  seed &= 0xffffffffUL;
-
-  /* Knuth's PRNG as used in the Mersenne Twister reference implementation */
-  for (pos=0; pos<RK_STATE_LEN; pos++)
-  {
-    state->key[pos] = seed;
-    seed = (1812433253UL * (seed ^ (seed >> 30)) + pos + 1) & 0xffffffffUL;
-  }
-
-  state->pos = RK_STATE_LEN;
+static inline uint64_t rotl64(uint64_t x,int k){
+    return (x<<k)|(x>>(64-k));
+}
+static inline uint64_t splitmix64(uint64_t &x){
+    uint64_t z=(x+=0x9e3779b97f4a7c15ULL);
+    z=(z^(z>>30))*0xbf58476d1ce4e5b9ULL;
+    z=(z^(z>>27))*0x94d049bb133111ebULL;
+    return z^(z>>31);
+}
+static uint64_t s[4];
+void rseed(unsigned long seed){
+    uint64_t st=seed;
+    for(int i=0;i<4;i++)
+        s[i]=splitmix64(st);
+}
+static inline uint64_t xoshiro256pp(){
+    uint64_t result=rotl64(s[0]+s[3],23)+s[0];
+    uint64_t t=s[1]<<17;
+    s[2]^=s[0];
+    s[3]^=s[1];
+    s[1]^=s[2];
+    s[0]^=s[3];
+    s[2]^=t;
+    s[3]=rotl64(s[3],45);
+    return result;
 }
 
-/* Magic Mersenne Twister constants */
-#define N 624
-#define M 397
-#define MATRIX_A 0x9908b0dfUL
-#define UPPER_MASK 0x80000000UL
-#define LOWER_MASK 0x7fffffffUL
-
-#ifdef _WIN64
-// Disable "unary minus operator applied to unsigned type, result still unsigned" warning.
-#pragma warning(disable : 4146)
-#endif
-
-/* Slightly optimised reference implementation of the Mersenne Twister */
-inline unsigned long rk_random(rk_state *state)
-{
-  unsigned long y;
-
-  if (state->pos == RK_STATE_LEN)
-  {
-    int i;
-
-    for (i=0;i<N-M;i++)
-    {
-      y = (state->key[i] & UPPER_MASK) | (state->key[i+1] & LOWER_MASK);
-      state->key[i] = state->key[i+M] ^ (y>>1) ^ (-(y & 1) & MATRIX_A);
+#ifdef __AVX2__
+struct xoshiro256pp8{
+    __m256i s0,s1,s2,s3;
+    void seed(uint64_t base){
+        uint64_t st=base;
+        alignas(32) uint64_t buf[32];
+        for(int i=0;i<8;i++){
+            buf[i]=splitmix64(st);
+            buf[i+8]=splitmix64(st);
+            buf[i+16]=splitmix64(st);
+            buf[i+24]=splitmix64(st);
+        }
+        s0=_mm256_load_si256((__m256i*)&buf[0]);
+        s1=_mm256_load_si256((__m256i*)&buf[8]);
+        s2=_mm256_load_si256((__m256i*)&buf[16]);
+        s3=_mm256_load_si256((__m256i*)&buf[24]);
     }
-    for (;i<N-1;i++)
-    {
-      y = (state->key[i] & UPPER_MASK) | (state->key[i+1] & LOWER_MASK);
-      state->key[i] = state->key[i+(M-N)] ^ (y>>1) ^ (-(y & 1) & MATRIX_A);
+    static inline __m256i rotl(__m256i x,int k){
+        return _mm256_or_si256(_mm256_slli_epi64(x,k),_mm256_srli_epi64(x,64-k));
     }
-    y = (state->key[N-1] & UPPER_MASK) | (state->key[0] & LOWER_MASK);
-    state->key[N-1] = state->key[M-1] ^ (y>>1) ^ (-(y & 1) & MATRIX_A);
-
-    state->pos = 0;
-  }
-  
-  y = state->key[state->pos++];
-
-  /* Tempering */
-  y ^= (y >> 11);
-  y ^= (y << 7) & 0x9d2c5680UL;
-  y ^= (y << 15) & 0xefc60000UL;
-  y ^= (y >> 18);
-
-  return y;
-}
-
-inline double rk_double(rk_state *state)
-{
-	/* shifts : 67108864 = 0x4000000, 9007199254740992 = 0x20000000000000 */
-	long a = rk_random(state) >> 5, b = rk_random(state) >> 6;
-	return (a * 67108864.0 + b) / 9007199254740992.0;
-}
-
-// Initialise the random generator with the specified seed
-void rseed(unsigned long seed) {
-	rk_seed(seed,&localState);
-	//srand(seed);
-}
-
-#if defined(_WIN64) && !defined(__CYGWIN__)
-unsigned long rndl() {
-	return rk_random(&localState);
-}
-#else
-unsigned long rndl() {
-	unsigned long r;
-	int bytes_read = getrandom(&r, sizeof(unsigned long), GRND_NONBLOCK );
-	if (bytes_read > 0) {
-		return r;
-	}
-	else	{
-		/*Fail safe */
-		return rk_random(&localState);
-	}
-}
-	
+    void next8(uint64_t out[8]){
+        __m256i r=_mm256_add_epi64(rotl(_mm256_add_epi64(s0,s3),23),s0);
+        __m256i t=_mm256_slli_epi64(s1,17);
+        s2=_mm256_xor_si256(s2,s0);
+        s3=_mm256_xor_si256(s3,s1);
+        s1=_mm256_xor_si256(s1,s2);
+        s0=_mm256_xor_si256(s0,s3);
+        s2=_mm256_xor_si256(s2,t);
+        s3=rotl(s3,45);
+        _mm256_store_si256((__m256i*)out,r);
+    }
+};
 #endif
 
-// Returns a uniform distributed double value in the interval ]0,1[
-double rnd() {
-	return rk_double(&localState);
+unsigned long rndl(){
+    unsigned long r;
+    if(getrandom(&r,sizeof(r),GRND_NONBLOCK)==sizeof(r))
+        return r;
+    return (unsigned long)xoshiro256pp();
+}
+
+double rnd(){
+    const double norm=1.0/(double)UINT64_MAX;
+    return (double)xoshiro256pp()*norm;
 }

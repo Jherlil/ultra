@@ -898,23 +898,21 @@ int main(int argc, char **argv)	{
                         case 'J':
                                 FLAGBENCHRNG = 1;
                         break;
-                        case 'k':
-                                if(FLAGMODE == MODE_RMD160_BSGS){
-                                        RMD160_BSGS_BITS = strtoul(optarg,NULL,10);
-                                        if(RMD160_BSGS_BITS > 63){
-                                                fprintf(stderr,"[W] value too big for -k, capped to 63\n");
-                                                RMD160_BSGS_BITS = 63;
+                        case 'k': {
+                                uint32_t val = strtoul(optarg, NULL, 10);
+                                if (FLAGMODE == MODE_RMD160_BSGS) {
+                                        if(val > 63) {
+                                                fprintf(stderr, "[W] value too big for -k, capped to 63\n");
+                                                val = 63;
                                         }
+                                        RMD160_BSGS_BITS = val;
                                         RMD160_BSGS_TABLE_SIZE = 1ULL << RMD160_BSGS_BITS;
-                                        printf("[+] Table size 2^%u entries\n",RMD160_BSGS_BITS);
-                                }else{
-                                        KFACTOR = (int)strtol(optarg,NULL,10);
-                                        if(KFACTOR <= 0){
-                                                KFACTOR = 1;
-                                        }
-                                        printf("[+] K factor %i\n",KFACTOR);
+                                        printf("[+] Table size 2^%u entries\n", RMD160_BSGS_BITS);
+                                } else {
+                                        KFACTOR = val <= 0 ? 1 : (int)val;
+                                        printf("[+] K factor %i\n", KFACTOR);
                                 }
-                        break;
+                        } break;
 
 			case 'l':
 				switch(indexOf(optarg,publicsearch,3)) {
