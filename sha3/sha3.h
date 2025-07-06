@@ -30,6 +30,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct sha3 {
 	uint64_t A[25];
 	unsigned nb;		/* number of bytes remaining to fill buffer */
@@ -85,4 +89,7 @@ void	KECCAK_512_Final(uint8_t[SHA3_512_DIGEST_LENGTH], SHA3_512_CTX *);
 
 int	SHA3_Selftest(void);
 
+#ifdef __cplusplus
+}
+#endif
 #endif	/* SHA3_H */
