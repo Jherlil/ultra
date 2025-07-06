@@ -94,26 +94,25 @@ static Point DecompressPoint(const uint8_t buf[33]) {
 }
 
 void generate_gtable(int bits, const char* filename) {
-    printf("[+] Generating GTable 2^%d...\n", bits);
+    printf("[+] Generating GTable with %d powers of two...\n", bits);
     FILE* f = fopen(filename, "wb");
     if (!f) {
         perror("[-] Cannot create GTable file");
         exit(1);
     }
-    Point G = secp->G;
-    Point P = G;
-    for (int64_t i = 0; i < (1LL << bits); ++i) {
+    Point P = secp->G;
+    for (int i = 0; i < bits; ++i) {
         unsigned char compressed[33];
         secp->GetPublicKeyRaw(true, P, (char*)compressed);
         fwrite(compressed, 1, 33, f);
-        P = secp->AddDirect(P, G);
+        P = secp->DoubleDirect(P);
     }
     fclose(f);
     printf("[+] GTable generated and saved to %s\n", filename);
 }
 
 void load_gtable(const char* filename, int bits) {
-    GTableSize = 1 << bits;
+    GTableSize = bits;
     GTable = new Point[GTableSize];
 #ifndef _WIN64
     madvise(GTable, sizeof(Point) * GTableSize, MADV_HUGEPAGE);
@@ -1217,12 +1216,12 @@ int main(int argc, char **argv)	{
 			break;
                         case 'g':
                                 gtable_bits = atoi(optarg);
-                                if (gtable_bits < 0 || gtable_bits > 60) {
-                                        printf("[-] Invalid GTable bits (range 0-60 allowed)\n");
+                                if (gtable_bits <= 0 || gtable_bits > 256) {
+                                        printf("[-] Invalid GTable bits (range 1-256 allowed)\n");
                                         exit(1);
                                 }
-                                sprintf(gtable_filename, "gtable_%d.bin", gtable_bits + 20);
-                                load_gtable(gtable_filename, gtable_bits + 20);
+                                sprintf(gtable_filename, "gtable_%d.bin", gtable_bits);
+                                load_gtable(gtable_filename, gtable_bits);
                                 UseGTable = 1;
                         break;
 			case 'z':
@@ -6296,7 +6295,7 @@ void menu() {
         printf("-I stride   Stride for xpoint, rmd160 and address, this option don't work with bsgs\n");
         printf("-k value    Use this only with bsgs mode, k value is factor for M, more speed but more RAM use wisely\n");
         printf("-j          Enable rmd160-bsgs mode (use -k N for table size)\n");
-        printf("-g bits     Load or build a GTable of 2^bits points for faster rmd160-bsgs\n");
+        printf("-g bits     Load or build a GTable with <bits> powers of two for faster rmd160-bsgs\n");
         printf("-l look     What type of address/hash160 are you looking for <compress, uncompress, both> Only for rmd160 and address\n");
 	printf("-m mode     mode of search for cryptos. (bsgs, xpoint, rmd160, address, vanity) default: address\n");
 	printf("-M          Matrix screen, feel like a h4x0r, but performance will dropped\n");
