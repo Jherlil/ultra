@@ -18,6 +18,7 @@ email: albertobsd@gmail.com
 #include "bloom/bloom.h"
 #include "sha3/sha3.h"
 #include "util.h"
+#include "distributed.h"
 
 #include "secp256k1/SECP256k1.h"
 #include "secp256k1/Point.h"
@@ -367,6 +368,68 @@ static void bench_rng() {
 #endif
 }
 
+static const char *CHECKPOINT_FILE = "checkpoint.txt";
+static time_t checkpoint_last = 0;
+
+static void save_checkpoint(const Int &val) {
+    time_t now = time(NULL);
+    if(now - checkpoint_last < 5)
+        return;
+    checkpoint_last = now;
+    FILE *f = fopen(CHECKPOINT_FILE, "w");
+    if(!f) return;
+    Int tmp((Int*)&val);
+    char *hex = tmp.GetBase16();
+    fwrite(hex, 1, strlen(hex), f);
+    fputc('\n', f);
+    fclose(f);
+    free(hex);
+}
+
+static bool load_checkpoint(Int &val) {
+    FILE *f = fopen(CHECKPOINT_FILE, "r");
+    if(!f) return false;
+    char buf[80];
+    if(!fgets(buf, sizeof(buf), f)) {
+        fclose(f);
+        return false;
+    }
+    fclose(f);
+    val.SetBase16(buf);
+    return true;
+}
+
+static void compute_thread_range(const Int &start, const Int &end, int tid, int total,
+                                 Int &out_start, Int &out_end) {
+    Int range_size((Int*)&end);
+    range_size.Sub((Int*)&start);
+    range_size.AddOne();
+
+    Int per_thread, remainder, tmp;
+    tmp.SetInt32(total);
+    per_thread.Set(&range_size);
+    per_thread.Div(&tmp, &remainder);
+
+    out_start.Set(&per_thread);
+    out_start.Mult((uint64_t)tid);
+    out_start.Add((Int*)&start);
+
+    uint64_t rem = remainder.GetInt64();
+    if((uint64_t)tid < rem) {
+        Int extra; extra.SetInt64(tid);
+        out_start.Add(&extra);
+    } else {
+        Int extra; extra.SetInt64(rem);
+        out_start.Add(&extra);
+    }
+
+    out_end.Set(&per_thread);
+    if((uint64_t)tid < rem)
+        out_end.AddOne();
+    out_end.Add(&out_start);
+    out_end.SubOne();
+}
+
 #define CRYPTO_NONE 0
 #define CRYPTO_BTC 1
 #define CRYPTO_ETH 2
@@ -648,6 +711,11 @@ int FLAGRANDOM = 0;
 int FLAG_N = 0;
 int FLAGPRECALCUTED_P_FILE = 0;
 
+int FLAG_COORDINATOR = 0;
+int FLAG_WORKER_MODE = 0;
+const char *coordinator_port = NULL;
+const char *worker_hostport = NULL;
+
 int bitrange;
 char *str_N;
 char *range_start;
@@ -852,7 +920,7 @@ int main(int argc, char **argv)	{
 	
 	printf("[+] Version %s, developed by Jherlil\n",version);
 
-    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:I:k:l:m:N:n:p:r:s:t:v:g:8:z:jJ")) != -1) {
+    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:I:k:l:m:N:n:p:r:s:t:v:g:8:z:jJx:y:")) != -1) {
 		switch(c) {
 			case 'h':
 				menu();
@@ -1109,7 +1177,14 @@ int main(int argc, char **argv)	{
 				}
                                 omp_set_num_threads(NTHREADS);
 				printf((NTHREADS > 1) ? "[+] Threads : %u\n": "[+] Thread : %u\n",NTHREADS);
-			break;
+                        case 'x':
+                                FLAG_COORDINATOR = 1;
+                                coordinator_port = optarg;
+                        break;
+                        case 'y':
+                                FLAG_WORKER_MODE = 1;
+                                worker_hostport = optarg;
+                        break;
 			case 'v':
 				FLAGVANITY = 1;
 				if(vanity_bloom == NULL){
@@ -1183,6 +1258,29 @@ int main(int argc, char **argv)	{
                 bench_rng();
                 return 0;
         }
+
+        if(FLAG_COORDINATOR){
+                char *ord = secp->order.GetBase16();
+                int rc = run_coordinator(coordinator_port ? coordinator_port : "8000",
+                                       range_start ? range_start : "1",
+                                       range_end ? range_end : ord,
+                                       28);
+                free(ord);
+                return rc;
+        }
+        if(FLAG_WORKER_MODE){
+                char *ws = NULL, *we = NULL;
+                int rc = run_worker(worker_hostport,
+                                   coordinator_port ? coordinator_port : "8000",
+                                   &ws, &we);
+                if(rc)
+                        return rc;
+                if(ws && we){
+                        range_start = ws;
+                        range_end   = we;
+                        FLAGRANGE = 1;
+                }
+        }
 	
 	if(  FLAGBSGSMODE == MODE_BSGS && FLAGENDOMORPHISM)	{
 		fprintf(stderr,"[E] Endomorphism doesn't work with BSGS\n");
@@ -1234,8 +1332,17 @@ int main(int argc, char **argv)	{
 					n_range_start.Set(&n_range_end);
 					n_range_end.Set(&n_range_aux);
 				}
-				n_range_diff.Set(&n_range_end);
-				n_range_diff.Sub(&n_range_start);
+                                n_range_diff.Set(&n_range_end);
+                                n_range_diff.Sub(&n_range_start);
+                                Int ckpt_tmp;
+                                if(load_checkpoint(ckpt_tmp)) {
+                                        if(ckpt_tmp.IsGreaterOrEqual(&n_range_start) && ckpt_tmp.IsLowerOrEqual(&n_range_end)) {
+                                                char *chk_hex = ckpt_tmp.GetBase16();
+                                                printf("[+] Resuming from checkpoint 0x%s\n", chk_hex);
+                                                free(chk_hex);
+                                                n_range_start.Set(&ckpt_tmp);
+                                        }
+                                }
 			}
 			else	{
 				fprintf(stderr,"[E] Start and End range can't be great than N\nFallback to random mode!\n");
@@ -1250,10 +1357,10 @@ int main(int argc, char **argv)	{
 	if(FLAGMODE != MODE_BSGS && FLAGMODE != MODE_MINIKEYS)	{
 		BSGS_N.SetInt32(DEBUGCOUNT);
 		if(FLAGRANGE == 0 && FLAGBITRANGE == 0)	{
-			n_range_start.SetInt32(1);
-			n_range_end.Set(&secp->order);
-			n_range_diff.Set(&n_range_end);
-			n_range_diff.Sub(&n_range_start);
+                n_range_start.SetInt32(1);
+                n_range_end.Set(&secp->order);
+                n_range_diff.Set(&n_range_end);
+                n_range_diff.Sub(&n_range_start);
 		}
 		else	{
 			if(FLAGBITRANGE)	{
@@ -1515,10 +1622,19 @@ int main(int argc, char **argv)	{
 		}
 		else	{	//Random start
 
-			n_range_start.SetInt32(1);
-			n_range_end.Set(&secp->order);
-                        rand_range_xoshiro(n_range_diff, &n_range_start, &n_range_end);
-			n_range_start.Set(&n_range_diff);
+                n_range_start.SetInt32(1);
+                n_range_end.Set(&secp->order);
+                rand_range_xoshiro(n_range_diff, &n_range_start, &n_range_end);
+                n_range_start.Set(&n_range_diff);
+                Int ckpt_tmp;
+                if(load_checkpoint(ckpt_tmp)) {
+                        if(ckpt_tmp.IsGreaterOrEqual(&n_range_start) && ckpt_tmp.IsLowerOrEqual(&n_range_end)) {
+                                char *chk_hex = ckpt_tmp.GetBase16();
+                                printf("[+] Resuming from checkpoint 0x%s\n", chk_hex);
+                                free(chk_hex);
+                                n_range_start.Set(&ckpt_tmp);
+                        }
+                }
 		}
 		BSGS_CURRENT.Set(&n_range_start);
 
@@ -6193,6 +6309,8 @@ void menu() {
         printf("-6          to skip sha256 Checksum on data files");
         printf("-t tn       Threads number, must be a positive integer\n");
         printf("-v value    Search for vanity Address, only with -m vanity\n");
+        printf("-x port     Run as coordinator on port\n");
+        printf("-y host:port Connect to coordinator as worker\n");
         printf("-z value    Bloom size multiplier, only address,rmd160,vanity, xpoint, value >= 1\n");
         printf("-J          Benchmark RNG throughput and exit\n");
 	printf("\nExample:\n\n");
@@ -7352,37 +7470,10 @@ void *thread_process_rmd160_bsgs(void *vargp) {
         free(tt);
         if(NTHREADS > 1)
                 omp_set_num_threads(1);
-        Int key,inc,range_size,per_thread,remainder,thread_start,thread_end,tmp;
+        Int key, inc, tmp, thread_start, thread_end;
 
-        /* Calculate the range size and split it between the threads */
-        range_size.Set(&n_range_end);
-        range_size.Sub(&n_range_start);
-        range_size.AddOne();
-
-        tmp.SetInt32(NTHREADS);
-        per_thread.Set(&range_size);
-        per_thread.Div(&tmp,&remainder);
-
-        /* Compute the starting key for this thread */
-        thread_start.Set(&per_thread);
-        thread_start.Mult((uint64_t)thread_number);
-        thread_start.Add(&n_range_start);
-        uint64_t rem = remainder.GetInt64();
-        if((uint64_t)thread_number < rem){
-                Int extra; extra.SetInt64(thread_number);
-                thread_start.Add(&extra);
-        }else{
-                Int extra; extra.SetInt64(rem);
-                thread_start.Add(&extra);
-        }
-
-        /* Compute the ending key for this thread */
-        thread_end.Set(&per_thread);
-        if((uint64_t)thread_number < rem){
-                thread_end.AddOne();
-        }
-        thread_end.Add(&thread_start);
-        thread_end.SubOne();
+        compute_thread_range(n_range_start, n_range_end, thread_number,
+                            NTHREADS, thread_start, thread_end);
 
         /* Setup the increment between blocks */
         inc.SetInt64(RMD160_BSGS_TABLE_SIZE);
@@ -7409,6 +7500,7 @@ void *thread_process_rmd160_bsgs(void *vargp) {
                 compare_block(table,RMD160_BSGS_TABLE_SIZE);
                 key.Add(&inc);
                 steps[thread_number]+=RMD160_BSGS_TABLE_SIZE;
+                save_checkpoint(key);
         }
 #if defined(_WIN64) && !defined(__CYGWIN__)
         VirtualUnlock(table, sizeof(struct rmd160_entry)*RMD160_BSGS_TABLE_SIZE);
