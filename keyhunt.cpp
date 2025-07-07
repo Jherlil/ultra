@@ -503,7 +503,7 @@ struct bPload	{
 	uint32_t finished;
 };
 
-#if defined(_WIN64) && !defined(__CYGWIN__)
+#if defined(_MSC_VER)
 #define PACK( __Declaration__ ) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop))
 PACK(struct publickey
 {
@@ -790,9 +790,9 @@ struct checksumsha256 *bloom_bPx2nd_checksums;
 struct checksumsha256 *bloom_bPx3rd_checksums;
 
 #if defined(_WIN64) && !defined(__CYGWIN__)
-std::vector<HANDLE> bloom_bP_mutex;
-std::vector<HANDLE> bloom_bPx2nd_mutex;
-std::vector<HANDLE> bloom_bPx3rd_mutex;
+HANDLE *bloom_bP_mutex;
+HANDLE *bloom_bPx2nd_mutex;
+HANDLE *bloom_bPx3rd_mutex;
 #else
 pthread_mutex_t *bloom_bP_mutex;
 pthread_mutex_t *bloom_bPx2nd_mutex;
@@ -2337,7 +2337,7 @@ int main(int argc, char **argv)	{
 				
 				for(j = 0; j < NTHREADS; j++)	{
 #if defined(_WIN64) && !defined(__CYGWIN__)
-					bPload_mutex = CreateMutex(NULL, FALSE, NULL);
+					bPload_mutex[j] = CreateMutex(NULL, FALSE, NULL);
 #else
 					pthread_mutex_init(&bPload_mutex[j],NULL);
 #endif
@@ -5131,7 +5131,7 @@ void *thread_bPload(void *vargp)	{
 #if defined(_WIN64) && !defined(__CYGWIN__)
 				WaitForSingleObject(bloom_bP_mutex[bloom_bP_index], INFINITE);
 				bloom_add(&bloom_bP[bloom_bP_index], rawvalue ,BSGS_BUFFERXPOINTLENGTH);
-				ReleaseMutex(bloom_bP_mutex[bloom_bP_index);
+				ReleaseMutex(bloom_bP_mutex[bloom_bP_index]);
 #else
 				pthread_mutex_lock(&bloom_bP_mutex[bloom_bP_index]);
 				bloom_add(&bloom_bP[bloom_bP_index], rawvalue ,BSGS_BUFFERXPOINTLENGTH);
