@@ -74,7 +74,11 @@ int run_coordinator(const char *port_str,
     sock_t srv = socket(AF_INET, SOCK_STREAM, 0);
     if(srv == (sock_t)-1) { perror("socket"); net_cleanup(); return 1; }
     int opt = 1;
+#if defined(_WIN32) || defined(_WIN64)
+    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+#else
     setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
@@ -125,7 +129,17 @@ int run_worker(const char *host_port,
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    if(inet_aton(host, &addr.sin_addr) == 0) { fprintf(stderr, "invalid host %s\n", host); return 1; }
+#if defined(_WIN32) || defined(_WIN64)
+    if(inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
+        fprintf(stderr, "invalid host %s\n", host);
+        return 1;
+    }
+#else
+    if(inet_aton(host, &addr.sin_addr) == 0) {
+        fprintf(stderr, "invalid host %s\n", host);
+        return 1;
+    }
+#endif
     if(connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("connect"); return 1; }
 
     char buf[160] = {0};
