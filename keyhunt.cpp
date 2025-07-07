@@ -503,7 +503,7 @@ struct bPload	{
 	uint32_t finished;
 };
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__MINGW32__) && !defined(__MINGW64__)
 #define PACK( __Declaration__ ) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop))
 PACK(struct publickey
 {
