@@ -12,6 +12,44 @@ Work for Bitcoin
 Work for Ethereum
 - address
 
+## Features
+
+- Multi-threaded CPU search with optional GPU acceleration for SHA256 using OpenCL. Enable with `-sh N` where `N` is the number of shaders.
+- Skip arbitrary key ranges by specifying a file with `-g ranges.txt`.
+- Distributed coordinator/worker mode (`-x` to host, `-y` to connect) to share work between nodes.
+- Automatic checkpoint/resume of the last scanned key every 5 seconds.
+- Per-thread Bloom filters to reduce false positives.
+- OpenCL is currently used only for SHA256; RIPEMD160 continues to run on the CPU.
+
+## Command-line options
+
+```
+  -h            show help
+  -b bits       set bit range
+  -c crypto     target crypto (btc, eth)
+  -e            enable endomorphism
+  -f file       input file of addresses/hashes
+  -g file       skip ranges file
+  -I stride     set stride for sequential mode
+  -k value      factor for BSGS table size
+  -j            enable rmd160-bsgs mode
+  -l type       address type (compress, uncompress, both)
+  -m mode       search mode (bsgs, xpoint, rmd160, address, vanity)
+  -n number     sequential numbers before random
+  -q            quiet thread output
+  -r start:end  search range in hex
+  -R            random mode
+  -s seconds    stats interval
+  -S            save BSGS data
+  -t N          number of threads
+  -v prefix     vanity prefix
+  -x port       run as coordinator
+  -y host:port  connect as worker
+  -z factor     bloom size multiplier
+  -J            benchmark RNG throughput
+  -sh N         number of OpenCL shaders
+```
+
 # TL:DR
 
 - Download and build
