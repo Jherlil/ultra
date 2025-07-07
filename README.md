@@ -91,9 +91,10 @@ Please read the CHANGELOG.md to see the new changes
 
 # Download and build
 
-This program was made in a linux environment.
-if you are windows user i strongly recommend to use WSL enviroment on Windows.
-it is available in the Microsoft store
+This program was originally developed on Linux.  A simple MinGW build
+is provided for Windows users so it can run natively without WSL.
+Install the "MSYS2 MinGW" toolchain and then run `make` from the MSYS2
+shell.  Ensure the OpenCL SDK and Pthreads libraries are installed.
 
 Please install on your system
 
@@ -1352,7 +1353,9 @@ here https://github.com/albertobsd/keyhunt/issues/108 and also others in telegra
 Please check the video that i made to answer that https://youtu.be/MVby8mYNxbI
 
 - Is available for Windows?
-R: It can be compiled with mingw, but i strongly recomend WSL with Ubuntu for windows 10
+R: It can be compiled directly using the MSYS2 MinGW environment on Windows.
+Install the toolchain with pacman and run `make`.  WSL remains a good
+alternative for developers familiar with Linux tools.
 
 Updated: 
 Yes thanks to @kanhavishva
@@ -1385,10 +1388,10 @@ This program was possible thanks to
 - ETH: 0x6222978c984C22d21b11b5b6b0Dd839C75821069
 - DOGE: DKAG4g2HwVFCLzs7YWdgtcsK6v5jym1ErV
 
-All the donations will be use only for two things:
+All donations are used for two main goals:
 
-- Native Windows version with 0 external dependencies.
-- Get an affordable desktop computer with decent GPU not high end, just to start the GPU version.
+- Improving the native Windows build and removing remaining Linux dependencies.
+- Obtaining modest hardware with a compatible GPU for continued development.
 
 ## Testnet
 

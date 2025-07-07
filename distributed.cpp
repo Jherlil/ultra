@@ -3,9 +3,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32) || defined(_WIN64)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+typedef SOCKET sock_t;
+#define CLOSESOCK closesocket
+static void net_init(){ WSADATA ws; WSAStartup(MAKEWORD(2,2), &ws); }
+static void net_cleanup(){ WSACleanup(); }
+#else
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+typedef int sock_t;
+#define CLOSESOCK close
+static void net_init(){}
+static void net_cleanup(){}
+#endif
 
 static void send_range(int sock, const char *s, const char *e) {
     char buf[160];
@@ -55,9 +69,10 @@ int run_coordinator(const char *port_str,
                     unsigned shard_bits) {
     init_ranges(start_hex, end_hex, shard_bits);
 
+    net_init();
     int port = atoi(port_str);
-    int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if(srv < 0) { perror("socket"); return 1; }
+    sock_t srv = socket(AF_INET, SOCK_STREAM, 0);
+    if(srv == (sock_t)-1) { perror("socket"); net_cleanup(); return 1; }
     int opt = 1;
     setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     struct sockaddr_in addr = {0};
@@ -68,8 +83,8 @@ int run_coordinator(const char *port_str,
     if(listen(srv, 8) < 0) { perror("listen"); return 1; }
     printf("[+] Coordinator listening on port %d\n", port);
     while(1) {
-        int cli = accept(srv, NULL, NULL);
-        if(cli < 0) continue;
+        sock_t cli = accept(srv, NULL, NULL);
+        if(cli == (sock_t)-1) continue;
         char *s = NULL, *e = NULL;
         if(allocate_range(&s, &e)) {
             send_range(cli, s, e);
@@ -78,8 +93,9 @@ int run_coordinator(const char *port_str,
         }
         free(s);
         free(e);
-        close(cli);
+        CLOSESOCK(cli);
     }
+    net_cleanup();
     return 0;
 }
 
@@ -103,8 +119,9 @@ int run_worker(const char *host_port,
     char host[64]; int port;
     parse_hp(host_port, host, &port);
     if(port == 0) port = atoi(default_port);
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if(sock < 0) { perror("socket"); return 1; }
+    net_init();
+    sock_t sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock == (sock_t)-1) { perror("socket"); net_cleanup(); return 1; }
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
@@ -112,8 +129,8 @@ int run_worker(const char *host_port,
     if(connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("connect"); return 1; }
 
     char buf[160] = {0};
-    ssize_t n = recv(sock, buf, sizeof(buf)-1, 0);
-    if(n <= 0) { perror("recv"); close(sock); return 1; }
+    int n = recv(sock, buf, sizeof(buf)-1, 0);
+    if(n <= 0) { perror("recv"); CLOSESOCK(sock); net_cleanup(); return 1; }
     buf[n] = '\0';
 
     if(strncmp(buf, "RANGE", 5) == 0) {
@@ -131,6 +148,7 @@ int run_worker(const char *host_port,
         fprintf(stderr, "[E] Unknown message %s\n", buf);
     }
 
-    close(sock);
+    CLOSESOCK(sock);
+    net_cleanup();
     return 0;
 }

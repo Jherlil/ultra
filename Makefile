@@ -8,6 +8,9 @@ CFLAGS   += -O3 -march=native -mavx2 -maes -msha -mpclmul  \
             -funroll-loops -fomit-frame-pointer -pipe -fopenmp \
             -fcf-protection=none
 LDFLAGS  += -lm -lpthread -lOpenCL
+ifeq ($(OS),Windows_NT)
+LDFLAGS  += -lws2_32
+endif
 
 OBJS = \
     oldbloom/bloom.o \
