@@ -14,12 +14,11 @@ Work for Ethereum
 
 ## Features
 
-- Multi-threaded CPU search with optional GPU acceleration for SHA256 using OpenCL. Enable with `-sh N` where `N` is the number of shaders.
+- Multi-threaded CPU search with optional GPU acceleration for SHA256 and RIPEMD160 using OpenCL. Enable with `-sh N` where `N` is the number of shaders.
 - Skip arbitrary key ranges by specifying a file with `-g ranges.txt`.
 - Distributed coordinator/worker mode (`-x` to host, `-y` to connect) to share work between nodes.
 - Automatic checkpoint/resume of the last scanned key every 5 seconds.
 - Per-thread Bloom filters to reduce false positives.
-- OpenCL is currently used only for SHA256; RIPEMD160 continues to run on the CPU.
 
 ## Command-line options
 

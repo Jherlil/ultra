@@ -22,6 +22,24 @@
 #include <inttypes.h>
 #include <string.h>
 #include <string>
+#include "../ocl_engine.h"
+
+static int g_use_opencl = 0;
+
+int ripemd160_opencl_init(int shaders) {
+    if(!ocl_max_shaders()) {
+        if(!ocl_init(shaders)) return 0;
+    }
+    g_use_opencl = 1;
+    return 1;
+}
+
+void ripemd160_opencl_close() {
+    if(g_use_opencl) {
+        ocl_cleanup();
+        g_use_opencl = 0;
+    }
+}
 
 /// Internal RIPEMD-160 implementation.
 namespace _ripemd160 {
@@ -321,6 +339,10 @@ std::string ripemd160_hex(unsigned char *digest) {
 }
 
 void ripemd160_batch_32(const uint8_t *inputs, size_t n, uint8_t *out) {
+  if(g_use_opencl) {
+    if(ocl_ripemd160_batch_32(inputs, n, out))
+      return;
+  }
   for(size_t i=0; i<n; ++i) {
     ripemd160_32((unsigned char *)(inputs + i*32), out + i*20);
   }

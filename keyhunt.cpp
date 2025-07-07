@@ -877,6 +877,7 @@ int main(int argc, char **argv)	{
 
         atexit(free_gtable);
         atexit(sha256_opencl_close);
+        atexit(ripemd160_opencl_close);
 	char *bf_ptr = NULL;
 	char *bPload_threads_available;
 	FILE *fd,*fd_aux1,*fd_aux2,*fd_aux3;
@@ -1341,6 +1342,7 @@ int main(int argc, char **argv)	{
                         fprintf(stderr,"[E] Failed to init OpenCL\n");
                         return 1;
                 }
+                ripemd160_opencl_init(OPENCL_SHADERS);
                 size_t sh = ocl_max_shaders();
                 printf("[+] OpenCL using %zu shaders\n", sh);
         }

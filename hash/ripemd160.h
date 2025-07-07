@@ -49,6 +49,8 @@ std::string ripemd160_hex(unsigned char *digest);
 extern "C" {
 #endif
 void ripemd160_batch_32(const uint8_t *inputs, size_t n, uint8_t *out);
+int ripemd160_opencl_init(int shaders);
+void ripemd160_opencl_close();
 #ifdef __cplusplus
 }
 #endif
