@@ -23,6 +23,9 @@
 #include <stdint.h>
 #include <inttypes.h>
 
+int sha256_opencl_init(int shaders);
+void sha256_opencl_close();
+
 void sha256(uint8_t *input,size_t length, uint8_t *digest);
 void sha256_33(uint8_t *input, uint8_t *digest);
 void sha256_65(uint8_t *input, uint8_t *digest);

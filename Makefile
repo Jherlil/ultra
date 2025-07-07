@@ -7,7 +7,7 @@ CXXFLAGS += -std=c++11 -O3 -march=native -mavx2 -maes -msha -mpclmul \
 CFLAGS   += -O3 -march=native -mavx2 -maes -msha -mpclmul  \
             -funroll-loops -fomit-frame-pointer -pipe -fopenmp \
             -fcf-protection=none
-LDFLAGS  += -lm -lpthread
+LDFLAGS  += -lm -lpthread -lOpenCL
 
 OBJS = \
     oldbloom/bloom.o \
@@ -20,7 +20,7 @@ OBJS = \
     secp256k1/Int.o secp256k1/Point.o secp256k1/SECP256K1.o \
     secp256k1/IntMod.o secp256k1/Random.o secp256k1/IntGroup.o \
     hash/ripemd160.o hash/sha256.o hash/ripemd160_sse.o hash/sha256_sse.o \
-    distributed.o skiprange.o
+    distributed.o skiprange.o ocl_engine.o
 
 all: keyhunt
 

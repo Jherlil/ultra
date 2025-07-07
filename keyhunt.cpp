@@ -30,6 +30,7 @@ extern Secp256K1 *secp;
 
 #include "hash/sha256.h"
 #include "xxhash/xxhash.h"
+#include "ocl_engine.h"
 
 #ifndef BATCH
 #define BATCH 1
@@ -731,6 +732,9 @@ int FLAG_WORKER_MODE = 0;
 const char *coordinator_port = NULL;
 const char *worker_hostport = NULL;
 
+int FLAG_OPENCL = 0;
+int OPENCL_SHADERS = 0;
+
 int bitrange;
 char *str_N;
 char *range_start;
@@ -872,6 +876,7 @@ int main(int argc, char **argv)	{
         char *str_divpretotal = NULL;
 
         atexit(free_gtable);
+        atexit(sha256_opencl_close);
 	char *bf_ptr = NULL;
 	char *bPload_threads_available;
 	FILE *fd,*fd_aux1,*fd_aux2,*fd_aux3;
@@ -932,7 +937,17 @@ int main(int argc, char **argv)	{
 	
 	
 	
-	printf("[+] Version %s, developed by Jherlil\n",version);
+        printf("[+] Version %s, developed by Jherlil\n",version);
+
+        for(int idx=1; idx<argc-1; ++idx) {
+            if(strcmp(argv[idx],"-sh")==0) {
+                OPENCL_SHADERS = atoi(argv[idx+1]);
+                FLAG_OPENCL = 1;
+                for(int j=idx; j<argc-2; j++) argv[j] = argv[j+2];
+                argc -= 2;
+                idx--;
+            }
+        }
 
     while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:g:I:k:l:m:N:n:p:r:s:t:v:8:z:jJx:y:")) != -1) {
 		switch(c) {
@@ -1187,13 +1202,17 @@ int main(int argc, char **argv)	{
 			case 'S':
 				FLAGSAVEREADFILE = 1;
 			break;
-			case 't':
-				NTHREADS = strtol(optarg,NULL,10);
-				if(NTHREADS <= 0)	{
-					NTHREADS = 1;
-				}
+                        case 't':
+                                if(FLAG_OPENCL){
+                                        printf("[W] Ignoring -t because OpenCL mode is active\n");
+                                        break;
+                                }
+                                NTHREADS = strtol(optarg,NULL,10);
+                                if(NTHREADS <= 0){
+                                        NTHREADS = 1;
+                                }
                                 omp_set_num_threads(NTHREADS);
-				printf((NTHREADS > 1) ? "[+] Threads : %u\n": "[+] Thread : %u\n",NTHREADS);
+                                printf((NTHREADS > 1) ? "[+] Threads : %u\n" : "[+] Thread : %u\n",NTHREADS);
                                 break;
                         case 'x':
                                 FLAG_COORDINATOR = 1;
@@ -1321,6 +1340,15 @@ int main(int argc, char **argv)	{
 		stride.Set(&ONE);
 	}
         init_generator();
+        if(FLAG_OPENCL){
+                if(!sha256_opencl_init(OPENCL_SHADERS)){
+                        fprintf(stderr,"[E] Failed to init OpenCL\n");
+                        return 1;
+                }
+                size_t sh = ocl_max_shaders();
+                printf("[+] OpenCL using %zu shaders\n", sh);
+                NTHREADS = 1;
+        }
 	if(FLAGMODE == MODE_BSGS )	{
 		printf("[+] Mode BSGS %s\n",bsgs_modes[FLAGBSGSMODE]);
 	}

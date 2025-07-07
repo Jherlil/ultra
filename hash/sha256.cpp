@@ -23,8 +23,17 @@
 #ifdef __AVX2__
 #include <immintrin.h>
 #endif
-
+#include "../ocl_engine.h"
 #include "sha256.h"
+
+static int g_use_opencl = 0;
+
+int sha256_opencl_init(int shaders) {
+    if(ocl_init(shaders)) { g_use_opencl = 1; return 1; }
+    return 0;
+}
+
+void sha256_opencl_close() { if(g_use_opencl) { ocl_cleanup(); g_use_opencl = 0; } }
 
 #define BSWAP
 
@@ -432,11 +441,13 @@ void CSHA256::Finalize(unsigned char hash[OUTPUT_SIZE])
 }
 
 void sha256(unsigned char *input, size_t length, unsigned char *digest) {
-
-	CSHA256 sha;
-	sha.Write(input, length);
-	sha.Finalize(digest);
-
+    if(g_use_opencl && length==33) {
+        if(ocl_sha256_33(input, digest))
+            return;
+    }
+    CSHA256 sha;
+    sha.Write(input, length);
+    sha.Finalize(digest);
 }
 
 const uint8_t sizedesc_32[8] = { 0,0,0,0,0,0,1,0 };
