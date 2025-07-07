@@ -885,7 +885,9 @@ int main(int argc, char **argv)	{
 	FILE *fd,*fd_aux1,*fd_aux2,*fd_aux3;
 	uint64_t i,BASE,PERTHREAD_R,itemsbloom,itemsbloom2,itemsbloom3;
 	uint32_t finished;
-	int readed,continue_flag,check_flag,c,salir,index_value,j;
+	int readed,check_flag,c,salir,index_value;
+        volatile int continue_flag = 1;
+        int j;
 	Int total,pretotal,debugcount_mpz,seconds,div_pretotal,int_aux,int_r,int_q,int58;
 	struct bPload *bPload_temp_ptr;
 	size_t rsize;
@@ -3073,7 +3075,7 @@ void *thread_process_minikeys(void *vargp)	{
 			}while(count < N_SEQUENTIAL_MAX && continue_flag);
 		}
 	}while(continue_flag);
-	return NULL;
+	return 0;
 }
 
 
@@ -3669,7 +3671,7 @@ void *thread_process(void *vargp)	{
 		}
 	} while(continue_flag);
 	ends[thread_number] = 1;
-	return NULL;
+	return 0;
 }
 
 
@@ -4108,7 +4110,7 @@ void *thread_process_vanity(void *vargp)	{
 		}
 	} while(continue_flag);
 	ends[thread_number] = 1;
-	return NULL;
+	return 0;
 }
 
 void _swap(struct address_value *a,struct address_value *b)	{
@@ -4583,7 +4585,7 @@ pn.y.ModAdd(&GSn[i].y);
 		steps[thread_number]+=2;
 	}while(1);
 	ends[thread_number] = 1;
-	return NULL;
+	return 0;
 }
 
 #if defined(_WIN64) && !defined(__CYGWIN__)
@@ -4840,7 +4842,7 @@ pn.y.ModAdd(&GSn[i].y);
 		steps[thread_number]+=2;
 	}while(1);
 	ends[thread_number] = 1;
-	return NULL;
+	return 0;
 }
 
 
@@ -5168,7 +5170,7 @@ void *thread_bPload(void *vargp)	{
 	pthread_mutex_unlock(&bPload_mutex[threadid]);
 	pthread_exit(NULL);
 #endif
-	return NULL;
+	return 0;
 }
 
 #if defined(_WIN64) && !defined(__CYGWIN__)
@@ -5340,7 +5342,7 @@ void *thread_bPload_2blooms(void *vargp)	{
 	pthread_mutex_unlock(&bPload_mutex[threadid]);
 	pthread_exit(NULL);
 #endif
-	return NULL;
+	return 0;
 }
 
 /* This function perform the KECCAK Opetation*/
@@ -5645,7 +5647,7 @@ pn.y.ModAdd(&GSn[i].y);
 		steps[thread_number]+=2;
 	}while(1);
 	ends[thread_number] = 1;
-	return NULL;
+	return 0;
 }
 
 #if defined(_WIN64) && !defined(__CYGWIN__)
@@ -5904,7 +5906,7 @@ pn.y.ModAdd(&GSn[i].y);
 		steps[thread_number]+=2;
 	}while(1);
 	ends[thread_number] = 1;
-	return NULL;
+	return 0;
 }
 
 #if defined(_WIN64) && !defined(__CYGWIN__)
@@ -6191,7 +6193,7 @@ void *thread_process_bsgs_both(void *vargp)	{
 		steps[thread_number]+=2;	
 	}while(1);
 	ends[thread_number] = 1;
-	return NULL;
+	return 0;
 }
 
 
@@ -7559,7 +7561,7 @@ void *thread_process_rmd160_bsgs(void *vargp) {
 #endif
         free(table);
         ends[thread_number] = 1;
-        return NULL;
+        return 0;
 }
 
 struct PrecomputedG {
