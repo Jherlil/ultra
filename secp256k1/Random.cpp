@@ -1,5 +1,10 @@
 #include "Random.h"
+#if defined(_WIN32) || defined(_WIN64)
+#include <windows.h>
+#include <wincrypt.h>
+#else
 #include <sys/random.h>
+#endif
 #ifdef __AVX2__
 #include <immintrin.h>
 #endif
@@ -69,8 +74,19 @@ struct xoshiro256pp8{
 
 unsigned long rndl(){
     unsigned long r;
-    if(getrandom(&r,sizeof(r),GRND_NONBLOCK)==sizeof(r))
+#if defined(_WIN32) || defined(_WIN64)
+    HCRYPTPROV prov;
+    if (CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+        if (CryptGenRandom(prov, sizeof(r), (BYTE*)&r)) {
+            CryptReleaseContext(prov, 0);
+            return r;
+        }
+        CryptReleaseContext(prov, 0);
+    }
+#elif defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    if (getrandom(&r, sizeof(r), GRND_NONBLOCK) == (ssize_t)sizeof(r))
         return r;
+#endif
     return (unsigned long)xoshiro256pp();
 }
 

@@ -27,10 +27,17 @@ email: albertobsd@gmail.com
 #include "hash/sha256.h"
 #include "hash/ripemd160.h"
 
+#if defined(_WIN32) || defined(_WIN64)
+#include <windows.h>
+#include <wincrypt.h>
+#else
 #include <unistd.h>
 #include <pthread.h>
+#if defined(__linux__)
 #include <sys/random.h>
 #include <linux/random.h>
+#endif
+#endif
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -323,24 +330,25 @@ int main(int argc, char **argv)	{
 	ONE.SetInt32(1);
 	BSGS_GROUP_SIZE.SetInt32(CPU_GRP_SIZE);
 	
-	unsigned long rseedvalue;
-	int bytes_read = getrandom(&rseedvalue, sizeof(unsigned long), GRND_NONBLOCK);
-	if(bytes_read > 0)	{
-		rseed(rseedvalue);
-		/*
-		In any case that seed is for a failsafe RNG, the default source on linux is getrandom function
-		See https://www.2uo.de/myths-about-urandom/
-		*/
-	}
-	else	{
-		/*
-			what year is??
-			WTF linux without RNG ? 
-		*/
-		fprintf(stderr,"[E] Error getrandom() ?\n");
-		exit(0);
-		rseed(clock() + time(NULL) + rand()*rand());
-	}
+        unsigned long rseedvalue;
+#if defined(_WIN32) || defined(_WIN64)
+        HCRYPTPROV prov;
+        if (CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+            if (CryptGenRandom(prov, sizeof(unsigned long), (BYTE*)&rseedvalue)) {
+                CryptReleaseContext(prov, 0);
+            } else {
+                CryptReleaseContext(prov, 0);
+                rseedvalue = (unsigned long)time(NULL);
+            }
+        } else {
+            rseedvalue = (unsigned long)time(NULL);
+        }
+#else
+        int bytes_read = getrandom(&rseedvalue, sizeof(unsigned long), GRND_NONBLOCK);
+        if (bytes_read != sizeof(unsigned long))
+                rseedvalue = (unsigned long)time(NULL);
+#endif
+        rseed(rseedvalue);
 	
 	port = PORT;
 	IP = (char*)ip_default;

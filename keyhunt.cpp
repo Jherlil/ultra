@@ -49,14 +49,11 @@ static inline void scalar_mul_win6_8way(const Int* k8, Point* P8);
 #else
 #include <unistd.h>
 #include <pthread.h>
+#if defined(__linux__)
 #include <sys/random.h>
-#include <sys/mman.h>
-#endif
-#ifdef __unix__
-#ifdef __CYGWIN__
-#else
 #include <linux/random.h>
 #endif
+#include <sys/mman.h>
 #endif
 
 /* endomorphism precomputed point */
@@ -347,8 +344,12 @@ static inline void init_thread_rng(int tid) {
 #ifdef _WIN64
     seed = (uint64_t)time(NULL) ^ (uint64_t)tid;
 #else
+#if defined(__linux__)
     if (getrandom(&seed, sizeof(seed), 0) != sizeof(seed))
         seed = (uint64_t)time(NULL);
+#else
+    seed = (uint64_t)time(NULL);
+#endif
     seed ^= (uint64_t)tid << 32;
 #endif
     xoshiro_seed(seed);
