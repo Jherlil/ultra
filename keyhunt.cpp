@@ -886,6 +886,7 @@ int main(int argc, char **argv)	{
 	uint64_t i,BASE,PERTHREAD_R,itemsbloom,itemsbloom2,itemsbloom3;
 	uint32_t finished;
 	int readed,check_flag,c,salir,index_value;
+        /* Progress monitoring */
         volatile int continue_flag = 1;
         int j;
 	Int total,pretotal,debugcount_mpz,seconds,div_pretotal,int_aux,int_r,int_q,int58;
