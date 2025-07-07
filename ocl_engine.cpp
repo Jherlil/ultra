@@ -3,11 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 static cl_context ctx = NULL;
 static cl_command_queue queue = NULL;
 static cl_program program = NULL;
 static cl_kernel kernel = NULL;
+static pthread_mutex_t ocl_mutex = PTHREAD_MUTEX_INITIALIZER;
 static size_t shader_count = 0;
 
 static char *load_source(const char *file, size_t *len) {
@@ -121,5 +123,35 @@ int ocl_sha256_33(const uint8_t *input, uint8_t *digest) {
     clEnqueueReadBuffer(queue, outbuf, CL_TRUE, 0, 32, digest, 0, NULL, NULL);
     clReleaseMemObject(inbuf);
     clReleaseMemObject(outbuf);
+    return 1;
+}
+
+int ocl_sha256_batch_33(const uint8_t *inputs, size_t n, uint8_t *digests) {
+    if(!kernel) return 0;
+    cl_int err;
+    const uint8_t pad[23] = {0x80};
+    const uint8_t sizedesc[8] = {0,0,0,0,0,0,1,8};
+    uint8_t *blocks = (uint8_t*)malloc(64*n);
+    if(!blocks) return 0;
+    for(size_t i=0;i<n;++i){
+        memcpy(blocks + i*64, inputs + i*33, 33);
+        memcpy(blocks + i*64 + 33, pad, 23);
+        memcpy(blocks + i*64 + 56, sizedesc, 8);
+    }
+    pthread_mutex_lock(&ocl_mutex);
+    cl_mem inbuf = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 64*n, blocks, &err);
+    if(err!=CL_SUCCESS){ pthread_mutex_unlock(&ocl_mutex); free(blocks); return 0; }
+    cl_mem outbuf = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, 32*n, NULL, &err);
+    if(err!=CL_SUCCESS){ clReleaseMemObject(inbuf); pthread_mutex_unlock(&ocl_mutex); free(blocks); return 0; }
+    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &inbuf);
+    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &outbuf);
+    if(err!=CL_SUCCESS){ clReleaseMemObject(inbuf); clReleaseMemObject(outbuf); pthread_mutex_unlock(&ocl_mutex); free(blocks); return 0; }
+    size_t gsize = n;
+    err = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &gsize, NULL, 0, NULL, NULL);
+    if(err!=CL_SUCCESS){ clReleaseMemObject(inbuf); clReleaseMemObject(outbuf); pthread_mutex_unlock(&ocl_mutex); free(blocks); return 0; }
+    clEnqueueReadBuffer(queue, outbuf, CL_TRUE, 0, 32*n, digests, 0, NULL, NULL);
+    clReleaseMemObject(inbuf); clReleaseMemObject(outbuf);
+    pthread_mutex_unlock(&ocl_mutex);
+    free(blocks);
     return 1;
 }

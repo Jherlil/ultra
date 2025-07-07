@@ -541,6 +541,10 @@ bool sha256_file(const char* file_name, uint8_t* checksum) {
 }
 
 void sha256_batch_33(const uint8_t *inputs, size_t n, uint8_t *out) {
+    if(g_use_opencl) {
+        if(ocl_sha256_batch_33(inputs, n, out))
+            return;
+    }
     for(size_t i=0; i<n; ++i) {
         sha256_33((unsigned char *)(inputs + i*33), out + i*32);
     }

@@ -1203,10 +1203,6 @@ int main(int argc, char **argv)	{
 				FLAGSAVEREADFILE = 1;
 			break;
                         case 't':
-                                if(FLAG_OPENCL){
-                                        printf("[W] Ignoring -t because OpenCL mode is active\n");
-                                        break;
-                                }
                                 NTHREADS = strtol(optarg,NULL,10);
                                 if(NTHREADS <= 0){
                                         NTHREADS = 1;
@@ -1347,7 +1343,6 @@ int main(int argc, char **argv)	{
                 }
                 size_t sh = ocl_max_shaders();
                 printf("[+] OpenCL using %zu shaders\n", sh);
-                NTHREADS = 1;
         }
 	if(FLAGMODE == MODE_BSGS )	{
 		printf("[+] Mode BSGS %s\n",bsgs_modes[FLAGBSGSMODE]);
