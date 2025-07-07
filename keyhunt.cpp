@@ -504,24 +504,24 @@ struct bPload	{
 };
 
 #if defined(_MSC_VER) && !defined(__MINGW32__) && !defined(__MINGW64__)
-#define PACK( __Declaration__ ) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop))
-PACK(struct publickey
-{
-	uint8_t parity;
-	union {
-		uint8_t data8[32];
-		uint32_t data32[8];
-		uint64_t data64[4];
-	} X;
-});
+#pragma pack(push,1)
+struct publickey {
+    uint8_t parity;
+    union {
+        uint8_t data8[32];
+        uint32_t data32[8];
+        uint64_t data64[4];
+    } X;
+};
+#pragma pack(pop)
 #else
 struct __attribute__((__packed__)) publickey {
-  uint8_t parity;
-	union	{
-		uint8_t data8[32];
-		uint32_t data32[8];
-		uint64_t data64[4];
-	} X;
+    uint8_t parity;
+    union {
+        uint8_t data8[32];
+        uint32_t data32[8];
+        uint64_t data64[4];
+    } X;
 };
 #endif
 
