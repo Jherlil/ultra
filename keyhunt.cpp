@@ -20,6 +20,7 @@ email: albertobsd@gmail.com
 #include "util.h"
 #include "distributed.h"
 #include "skiprange.h"
+#include <omp.h>
 
 #include "secp256k1/SECP256k1.h"
 #include "secp256k1/Point.h"
