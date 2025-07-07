@@ -7507,7 +7507,6 @@ void *thread_process_rmd160_bsgs(void *vargp) {
                 table = NULL;
 #endif
         checkpointer((void*)table,__FILE__,"malloc","rmd160_table",__LINE__-1);
-        printf("[+] Thread %d allocating %.2f MB for rmd160-bsgs table\n",thread_number,(double)(sizeof(struct rmd160_entry)*RMD160_BSGS_TABLE_SIZE)/1048576.0);
 #if defined(_WIN64) && !defined(__CYGWIN__)
         VirtualLock(table, sizeof(struct rmd160_entry)*RMD160_BSGS_TABLE_SIZE);
 #else
